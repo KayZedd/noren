@@ -130,7 +130,7 @@ opacity = 0.2                  # 0.05 do 0.9, domyślnie 0.2
 
 **Potrzebuje uprawnień administratora?** Nie. Pisze tylko do `HKCU` i do plików w Twoim profilu. Wyjątek to okna uruchomione jako administrator: Windows nie pozwala zwykłemu procesowi ich przestylować, więc `noren run` je pomija, chyba że też działa z podniesionymi uprawnieniami.
 
-**Czemu nie Slint, egui, iced albo WinUI?** Licencja royalty-free Slinta wymaga atrybucji w dostarczanej aplikacji. egui i iced są zbudowane wokół jednego okna aplikacji, a okna warstwowe, przepuszczające kliknięcia, AppBar i okna na warstwie pulpitu walczą z ich pętlą zdarzeń. WinUI nie jest Rust-first i ciągnie ciężki runtime.
+**Czemu nie Slint, egui, iced albo WinUI?** Licencja royalty-free Slinta wymaga atrybucji w dostarczanej aplikacji. egui i iced są zbudowane wokół jednego okna aplikacji, a okna warstwowe, przepuszczające kliknięcia, AppBar i okna na warstwie pulpitu walczą z ich pętlą zdarzeń. WinUI nie jest Rust-first i ciągnie ciężki runtime. noren studio to zwykłe okno aplikacji, więc używa egui; powierzchnie pulpitu nie.
 
 **Linux albo macOS?** Silnik palet, logika profili i dziennika oraz cały stos UI działają i są testowane na Linuksie. Cele plikowe też tam działają. Cele rejestru i natywny host są tylko na Windows. Feature `preview` otwiera okno deweloperskie na każdym systemie.
 
@@ -225,6 +225,22 @@ Obciążenie GPU pochodzi z liczników wydajności `GPU Engine`, tego samego źr
 
 Tekst używa rodzin czcionek z motywu i spada na czcionki systemowe. Żadne czcionki nie są dołączone. Żeby dołączyć własną, wywołaj `TextSystem::load_fonts(path)` i sprawdź jej licencję.
 
+## noren studio
+
+Aplikacja okienkowa do wszystkiego, co robi CLI: edycja palety z rampami na żywo i kontrolą APCA, edycja profilu z walidacją w locie, podgląd diffu, apply i rollback, trzymanie profilu na żywo, lista okien i pasujących reguł, stany i historia.
+
+```sh
+cargo build --release --features studio
+noren-studio                 # startuje na stronie Palette
+noren-studio --page live     # palette, profile, apply, live, windows, states, history, settings
+```
+
+- Zamknięcie okna chowa je do zasobnika; runtime na żywo działa dalej. Menu zasobnika: Otwórz, Trzymaj profil na żywo, Zakończ. Zakończ przywraca wszystkie okna i wychodzi.
+- Domyślny wygląd to Kanagawa Wave, a studio przebarwia się według palety profilu w trakcie edycji.
+- Na Windows 11 okno dostaje tło akrylowe. Ustawienia mają angielski i polski oraz przełącznik ograniczenia animacji.
+- Ustawienia są w `%LOCALAPPDATA%\noren\studio.json`.
+- CLI się nie zmienia i nie potrzebuje funkcji `studio`.
+
 ## Wiersz poleceń
 
 ```sh
@@ -250,6 +266,7 @@ Zrobione:
 - [x] Deklaratywne reguły okien: rogi, Mica, przezroczystość, kolor ramki, monitor
 - [x] Kolor ramki okna ze stanu (build padł, git brudny) przez `noren state <nazwa> <ok|fail|warn|busy>`
 - [x] Przyciemnianie poza fokusem i klawisz x-ray
+- [x] noren studio: aplikacja do zarządzania z ikoną w zasobniku
 
 W planach:
 - [ ] Każdy program wypisujący JSON jest widżetem
@@ -267,7 +284,7 @@ W planach:
 
 ## Ograniczenia
 
-- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. Zgłoszenia mile widziane.
+- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia. Zgłoszenia mile widziane.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
 - `noren run` musi działać, żeby reguły okien się trzymały. Zabity bez Ctrl+C zostawia okna w swoim stylu, dopóki się nie zamkną.
@@ -293,8 +310,9 @@ Sprawdzenia, które musi przejść każda zmiana:
 
 ```sh
 cargo test --all-targets                                       # testy bramkowe, < 1 s
-cargo clippy --all-targets --features preview
+cargo clippy --all-targets --features preview,studio
 cargo clippy --target x86_64-pc-windows-msvc --all-targets     # host Win32 z Linuksa
+cargo clippy --target x86_64-pc-windows-msvc --all-targets --features studio
 ```
 
 Testy renderowania tekstu działają tylko z zainstalowanym Noto Sans albo DejaVu Sans. Bez nich przechodzą trywialnie.
@@ -307,6 +325,7 @@ Struktura:
 | [src/rice/](src/rice/) | Profile, dziennik, apply i rollback, merge JSONC, magazyn rejestru i plików |
 | [src/shell/](src/shell/) | Reguły okien, stany, przyciemnianie, x-ray i runtime Win32, który je trzyma |
 | [src/bin/noren.rs](src/bin/noren.rs) | Wiersz poleceń |
+| [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: aplikacja egui, szklany motyw, zasobnik |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Drzewo elementów, layout, malowanie |
 | [src/host/](src/host/) | Host Win32, okno podglądu, headless symulator |

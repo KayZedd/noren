@@ -1244,10 +1244,19 @@ impl Studio {
                 ui.label(RichText::new(e).color(th.negative));
             }
             Some(Ok(list)) if list.is_empty() => {
-                ui.label(
-                    RichText::new(l.pick("Nothing applied yet.", "Nic jeszcze nie zastosowano."))
+                glass(ui, th, |ui| {
+                    ui.set_min_width(ui.available_width());
+                    ui.label(
+                        RichText::new(l.pick("Nothing applied yet", "Nic jeszcze nie zastosowano")).strong(),
+                    );
+                    ui.label(
+                        RichText::new(l.pick(
+                            "Every apply lands here, and any of them can be rolled back.",
+                            "Każde zastosowanie trafi tutaj i każde da się cofnąć.",
+                        ))
                         .color(th.dim),
-                );
+                    );
+                });
             }
             Some(Ok(list)) => {
                 ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {

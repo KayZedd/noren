@@ -130,7 +130,7 @@ opacity = 0.2                  # 0.05 to 0.9, default 0.2
 
 **Does it need admin rights?** No. It writes only to `HKCU` and to files in your profile. Windows running as administrator are the exception: Windows does not let a normal process restyle them, so `noren run` skips them unless it runs elevated too.
 
-**Why not Slint, egui, iced or WinUI?** Slint's royalty-free license requires attribution in the shipped app. egui and iced are built around a single application window, and layered, click-through, AppBar and desktop-layer windows fight their event loop. WinUI is not Rust-first and brings a heavy runtime.
+**Why not Slint, egui, iced or WinUI?** Slint's royalty-free license requires attribution in the shipped app. egui and iced are built around a single application window, and layered, click-through, AppBar and desktop-layer windows fight their event loop. WinUI is not Rust-first and brings a heavy runtime. noren studio is an ordinary app window, so it does use egui; the desktop surfaces do not.
 
 **Linux or macOS?** The palette engine, the profile and journal logic, and the whole UI stack run and are tested on Linux. File targets work there too. Registry targets and the native host are Windows only. The `preview` feature opens a dev window on any OS.
 
@@ -225,6 +225,22 @@ GPU load comes from the `GPU Engine` performance counters, the same source Task 
 
 Text uses the theme's font families and falls back to system fonts. No fonts are bundled. To ship one, call `TextSystem::load_fonts(path)` and check its license.
 
+## noren studio
+
+A desktop app for everything the CLI does: edit the palette with live ramps and APCA checks, edit the profile with live validation, preview the diff and apply or roll back, hold the profile live, browse windows and the rules that match them, set states, and read the history.
+
+```sh
+cargo build --release --features studio
+noren-studio                 # opens on the Palette page
+noren-studio --page live     # palette, profile, apply, live, windows, states, history, settings
+```
+
+- Closing the window hides it to the tray; the live runtime keeps running. Tray menu: Open, Hold profile live, Quit. Quit restores every window and exits.
+- Kanagawa Wave is the default look, and the studio retints itself from the profile's palette as you edit it.
+- On Windows 11 the window gets an acrylic backdrop. Settings has English and Polish, and a Reduce motion switch.
+- Settings live in `%LOCALAPPDATA%\noren\studio.json`.
+- The CLI is unchanged and does not need the `studio` feature.
+
 ## Command line
 
 ```sh
@@ -250,6 +266,7 @@ Done:
 - [x] Declarative window rules: corners, Mica, opacity, border color, monitor
 - [x] Window border color from state (build failed, git dirty) via `noren state <name> <ok|fail|warn|busy>`
 - [x] Focus dimming and an x-ray hold key
+- [x] noren studio: management app with a tray icon
 
 Planned:
 - [ ] Any program printing JSON is a widget
@@ -267,7 +284,7 @@ Planned:
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. Reports are welcome.
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop. Reports are welcome.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
 - `noren run` must keep running for window rules to hold. If it is killed without Ctrl+C, the windows keep their style until they close.
@@ -293,8 +310,9 @@ Checks every change must pass:
 
 ```sh
 cargo test --all-targets                                       # gate tests, < 1 s
-cargo clippy --all-targets --features preview
+cargo clippy --all-targets --features preview,studio
 cargo clippy --target x86_64-pc-windows-msvc --all-targets     # Win32 host from Linux
+cargo clippy --target x86_64-pc-windows-msvc --all-targets --features studio
 ```
 
 Text-rendering tests run only when Noto Sans or DejaVu Sans is installed. Without either they pass trivially.
@@ -307,6 +325,7 @@ Layout:
 | [src/rice/](src/rice/) | Profiles, journal, apply and rollback, JSONC merge, registry and file store |
 | [src/shell/](src/shell/) | Window rules, states, focus dimming, x-ray, and the Win32 runtime that holds them |
 | [src/bin/noren.rs](src/bin/noren.rs) | Command line |
+| [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: egui app, glass theme, tray |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Element tree, layout, painting |
 | [src/host/](src/host/) | Win32 host, preview window, headless simulator |
