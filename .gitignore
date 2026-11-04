@@ -1,0 +1,13 @@
+/target
+*.png
+!docs/**/*.png
+*.ttf
+*.otf
+*.pdb
+*.exe
+.env
+.env.*
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
