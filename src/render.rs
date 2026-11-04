@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, TAU};
 
 use tiny_skia::{
-    FillRule, GradientStop, LineCap, LinearGradient, Mask, Paint as SkPaint, Path, PathBuilder, Pixmap,
-    PixmapPaint, Point, SpreadMode, Stroke, Transform,
+    FillRule, FilterQuality, GradientStop, LineCap, LinearGradient, Mask, Paint as SkPaint, Path,
+    PathBuilder, Pattern, Pixmap, PixmapPaint, Point, SpreadMode, Stroke, Transform,
 };
 
 use crate::element::Content;
@@ -103,6 +103,29 @@ impl<'a> Canvas<'a> {
         let transform = self.transform();
         self.pixmap
             .stroke_path(path, &paint, &stroke, transform, self.mask);
+    }
+
+    /// Draws `image` (premultiplied RGBA) stretched over `rect` with rounded corners, like
+    /// album art or a thumbnail.
+    pub fn draw_image(&mut self, rect: Rect, radius: f32, image: &Pixmap) {
+        let Some(path) = rounded_rect_path(rect, radius) else {
+            return;
+        };
+        let (iw, ih) = (image.width().max(1) as f32, image.height().max(1) as f32);
+        let paint = SkPaint {
+            shader: Pattern::new(
+                image.as_ref(),
+                SpreadMode::Pad,
+                FilterQuality::Bicubic,
+                self.opacity,
+                Transform::from_row(rect.w / iw, 0.0, 0.0, rect.h / ih, rect.x, rect.y),
+            ),
+            anti_alias: true,
+            ..SkPaint::default()
+        };
+        let transform = self.transform();
+        self.pixmap
+            .fill_path(&path, &paint, FillRule::Winding, transform, self.mask);
     }
 
     pub fn fill_rounded_rect(&mut self, rect: Rect, radius: f32, color: Color) {
@@ -323,6 +346,16 @@ fn draw_svg(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn images_stretch_over_their_rect_and_keep_round_corners() {
+        let mut image = Pixmap::new(2, 2).unwrap();
+        image.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 255));
+        let mut target = Pixmap::new(40, 40).unwrap();
+        Canvas::new(&mut target, 2.0).draw_image(Rect::new(0.0, 0.0, 20.0, 20.0), 6.0, &image);
+        assert_eq!(pixel(&target, 20, 20), [255, 0, 0, 255]);
+        assert_eq!(pixel(&target, 0, 0)[3], 0, "the corner is cut");
+    }
 
     fn pixel(p: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = p.pixel(x, y).unwrap();

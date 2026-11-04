@@ -39,6 +39,10 @@ rfd = { version = "0.17", optional = true }
 tray-icon = { version = "0.26", optional = true }
 raw-window-handle = { version = "0.6", optional = true }
 windows = { version = "0.62.2", features = [
+    "Foundation",
+    "Graphics_Imaging",
+    "Media_Control",
+    "Storage_Streams",
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",

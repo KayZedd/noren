@@ -49,6 +49,9 @@
 //! run = ["curl", "-s", "wttr.in/?format=%t"]
 //! interval = 600
 //!
+//! [media]                  # now playing on the panel, colored from the cover (see `media`)
+//! cover_colors = true
+//!
 //! [schedule]               # dark/light by the clock or the sun (see `shell::schedule`)
 //! light = "sunrise"
 //! dark = "21:00"
@@ -67,6 +70,7 @@ use serde_json::{Value, json};
 use super::merge::{JsonEdit, merge_jsonc, replace_block};
 use super::{Change, Slot, Store};
 use crate::exec::ExecConfig;
+use crate::media::{MediaConfig, MediaWidget};
 use crate::palette::{Palette, PaletteSpec, export};
 use crate::shell::command::{ChordsConfig, CommandConfig, Commands, CornersConfig};
 use crate::shell::focus::{Focus, FocusConfig, Xray, XrayConfig};
@@ -107,6 +111,8 @@ pub struct Profile {
     /// Programs shown as panel widgets by `noren panel` (see [`crate::exec`]).
     #[serde(default)]
     pub widget: Vec<ExecConfig>,
+    /// The now-playing widget on `noren panel` (see [`crate::media`]).
+    pub media: Option<MediaConfig>,
     /// Dark and light by the clock or the sun, held by `noren run`.
     pub schedule: Option<ScheduleConfig>,
 }
@@ -196,6 +202,20 @@ impl Profile {
 
     pub fn palette(&self) -> Palette {
         Palette::generate(&self.palette)
+    }
+
+    /// The panel `noren panel` shows: `[media]` first, then each `[[widget]]`.
+    pub fn panel(&self) -> Result<crate::Panel, String> {
+        if self.widget.is_empty() && self.media.is_none() {
+            return Err("the profile has no [[widget]] or [media]".into());
+        }
+        let theme = self.palette().theme(crate::Theme::aizome());
+        let mut panel = crate::Panel::new(crate::PanelConfig::default(), theme);
+        if let Some(m) = &self.media {
+            panel.add(MediaWidget::new(m.clone(), self.palette.clone()));
+        }
+        crate::exec::add(&mut panel, &self.widget)?;
+        Ok(panel)
     }
 
     /// The desired state of every targeted slot. Config files are read through `store` so
@@ -446,6 +466,24 @@ profile = "ff"
         assert_eq!(p.widget[0].interval, Some(60.0));
         assert_eq!(Profile::parse(&toml::to_string(&p).unwrap()).unwrap(), p);
         assert!(Profile::parse(&text.replace("interval", "every")).is_err());
+    }
+
+    #[test]
+    fn media_parses_and_makes_a_panel_on_its_own() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n";
+        let none = Profile::parse(base).unwrap();
+        assert!(none.panel().err().unwrap().contains("[media]"));
+        let p = Profile::parse(&format!("{base}[media]\n")).unwrap();
+        assert_eq!(p.media, Some(MediaConfig { cover_colors: true }));
+        assert_eq!(Profile::parse(&toml::to_string(&p).unwrap()).unwrap(), p);
+        let off = Profile::parse(&format!("{base}[media]\ncover_colors = false\n")).unwrap();
+        assert!(!off.media.unwrap().cover_colors);
+        let mut panel = p.panel().unwrap();
+        panel.set_viewport(1280.0, 720.0, 1.0);
+        panel.reveal_now();
+        panel.tick(std::time::Instant::now(), Some((640.0, 10.0)), false);
+        assert!(panel.cell_rect("media").is_some());
+        assert!(Profile::parse(&format!("{base}[media]\ncolors = 1\n")).is_err());
     }
 
     #[test]

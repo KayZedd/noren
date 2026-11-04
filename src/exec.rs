@@ -294,23 +294,19 @@ fn kill(child: &Mutex<Option<Child>>) {
     }
 }
 
-/// A panel with one widget per config, colored by `theme`. Names must be unique: they are the
-/// widgets' ids.
-pub fn panel(configs: &[ExecConfig], theme: Theme) -> Result<crate::Panel, String> {
-    if configs.is_empty() {
-        return Err("the profile has no [[widget]]".into());
-    }
+/// Adds one widget per config to `panel`. Names must be unique: they are the widgets' ids.
+/// Nothing is added when a config is invalid.
+pub fn add(panel: &mut crate::Panel, configs: &[ExecConfig]) -> Result<(), String> {
     for (i, c) in configs.iter().enumerate() {
         if configs[..i].iter().any(|o| o.name == c.name) {
             return Err(format!("two widgets are named {:?}", c.name));
         }
         c.validate()?;
     }
-    let mut panel = crate::Panel::new(crate::PanelConfig::default(), theme);
     for c in configs {
         panel.add(ExecWidget::spawn(c.clone())?);
     }
-    Ok(panel)
+    Ok(())
 }
 
 /// A widget fed by a program.
@@ -549,12 +545,13 @@ mod tests {
     }
 
     #[test]
-    fn panels_need_unique_valid_widgets() {
-        let theme = Theme::aizome();
-        assert!(panel(&[], theme.clone()).is_err());
+    fn widgets_need_unique_valid_names() {
+        let mut panel = crate::Panel::new(crate::PanelConfig::default(), Theme::aizome());
+        assert!(add(&mut panel, &[]).is_ok());
         let twins = [config(&["x"], Some(60.0)), config(&["y"], Some(60.0))];
-        assert!(panel(&twins, theme.clone()).err().unwrap().contains("two widgets"));
-        assert!(panel(&[config(&["x"], Some(0.0))], theme).is_err());
+        let e = add(&mut panel, &twins).err().unwrap();
+        assert!(e.contains("two widgets"), "{e}");
+        assert!(add(&mut panel, &[config(&["x"], Some(0.0))]).is_err());
     }
 
     #[test]

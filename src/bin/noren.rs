@@ -20,7 +20,7 @@ usage:
   noren log                        list transactions
   noren run <profile.toml>         hold [[window]] rules, [focus], [xray], chords, hot
                                    corners, [[glow]] and [schedule] until Ctrl+C
-  noren panel <profile.toml>       a top panel with the profile's [[widget]] programs
+  noren panel <profile.toml>       a top panel with the profile's [[widget]] programs and [media]
                                    [--monitor <n>] [--screenshot <out.png>]
   noren schedule <profile.toml>    today's dark/light switch times from [schedule]
   noren commands <profile.toml>    list the profile's [[command]]s
@@ -198,8 +198,7 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         "panel" => {
             let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;
-            let theme = profile.palette().theme(noren::Theme::aizome());
-            let panel = noren::exec::panel(&profile.widget, theme)?;
+            let panel = profile.panel()?;
             if let Some(out) = option(rest, "--screenshot") {
                 return screenshot(panel, out.as_ref());
             }

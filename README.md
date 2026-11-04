@@ -325,6 +325,19 @@ noren panel my-rice.toml                       # Windows: the panel, Quit in its
 noren panel my-rice.toml --screenshot out.png  # any OS: render once to a PNG
 ```
 
+### Now playing
+
+`[media]` adds a widget for the current Windows media session: Spotify, a browser tab, foobar2000, anything that shows up in the volume flyout. The panel shows the cover, title and artist; the popup adds the album, a progress bar and previous, play/pause and next.
+
+```toml
+[media]
+cover_colors = true   # default; false keeps the profile's accent
+```
+
+![The media widget with a warm cover and with a cool one: the artist, progress bar and play button take the cover's color](docs/media.webp)
+
+The accent comes from the cover: the most colorful hue that covers a fair share of the picture, set to a lightness that reads on the panel. A grey or black-and-white cover keeps the profile's accent. `[media]` works alone or next to `[[widget]]`s. [examples/media.rs](examples/media.rs) renders the widget with a made-up track on any OS.
+
 ### In Rust
 
 A top panel:
@@ -374,7 +387,7 @@ noren rollback [--force]                             # undo the newest transacti
 noren log                                            # list transactions
 noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule] until Ctrl+C
 noren schedule <profile.toml>                        # today's dark/light switch times
-noren panel <profile.toml> [--monitor <n>]           # top panel with the [[widget]] programs
+noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs and [media]
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
 noren commands <profile.toml> [<name>]               # list [[command]]s, or run one
@@ -403,7 +416,7 @@ Planned:
 - [x] Ambient edge glow for status
 - [x] Leader-key chords, command palette, hot corners
 - [ ] Alt+Tab replacement with live thumbnails
-- [ ] Media widget themed from the cover art
+- [x] Media widget themed from the cover art
 - [ ] Restyled notifications
 - [ ] Shareable rice card PNG
 
@@ -454,10 +467,12 @@ Layout:
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: egui app, glass theme, tray, command palette |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |
 | [src/exec.rs](src/exec.rs) | Widgets fed by any program's output |
+| [src/media/](src/media/) | Now-playing widget, cover accent, Windows media session |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Element tree, layout, painting |
 | [src/host/](src/host/) | Win32 host, preview window, headless simulator |
 | [src/theme.rs](src/theme.rs), [src/text.rs](src/text.rs) | Themes and text |
 | [examples/pulse.rs](examples/pulse.rs) | System monitor widget |
+| [examples/media.rs](examples/media.rs) | Media widget with a made-up track, for screenshots |
 
 ## Credits
 

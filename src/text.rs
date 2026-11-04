@@ -176,7 +176,9 @@ impl TextSystem {
         let size = spec.size.unwrap_or(default_size);
         let elided;
         let text = if spec.elide && !spec.wrap {
-            elided = self.elide(&spec.text, size, spec.weight, rect.w);
+            // Layout rounds edges to whole pixels, which can take up to a pixel off a text's
+            // measured width; that is not a reason to cut it.
+            elided = self.elide(&spec.text, size, spec.weight, rect.w + 1.0);
             elided.as_str()
         } else {
             spec.text.as_str()
@@ -314,6 +316,36 @@ pub(crate) mod tests {
         assert!(elided.ends_with('…'), "{elided}");
         assert!(text.measure(&spec(&elided), 13.0, None).0 <= 60.01);
         assert_eq!(text.elide("abc", 13.0, 400, 0.0), "…");
+    }
+
+    #[test]
+    fn text_in_a_rect_rounded_down_by_layout_is_not_elided() {
+        let Some(mut text) = test_text() else { return };
+        let elide = TextSpec {
+            elide: true,
+            ..spec("Low Tide · Harbour Lights")
+        };
+        let (w, h) = text.measure(&elide, 11.2, None);
+        let mut draw = |width: f32| {
+            let mut p = Pixmap::new(300, 30).unwrap();
+            let rect = Rect::new(0.0, 0.0, width, h);
+            text.draw(
+                &mut p,
+                &elide,
+                11.2,
+                rect,
+                1.0,
+                Color::WHITE,
+                Rect::new(0.0, 0.0, 300.0, 30.0),
+            );
+            p
+        };
+        assert!(
+            draw(w.floor()) == draw(w + 20.0),
+            "measured {w}, cut at {}",
+            w.floor()
+        );
+        assert!(draw(w - 10.0) != draw(w + 20.0), "a narrower rect still elides");
     }
 
     #[test]

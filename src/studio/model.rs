@@ -52,6 +52,9 @@ border = "accent.7"
 # run = ["curl", "-s", "wttr.in/?format=%t"]
 # interval = 600
 
+# [media]                # now playing on `noren panel`, colored from the album cover
+# cover_colors = true
+
 # [schedule]             # light from sunrise, dark from 21:00 while Live holds the profile
 # light = "sunrise"
 # dark = "21:00"

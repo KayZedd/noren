@@ -325,6 +325,19 @@ noren panel my-rice.toml                       # Windows: panel, kończy go Quit
 noren panel my-rice.toml --screenshot out.png  # dowolny system: jednorazowy render do PNG
 ```
 
+### Teraz odtwarzane
+
+`[media]` dodaje widżet bieżącej sesji multimediów Windows: Spotify, karta przeglądarki, foobar2000, wszystko, co widać w wysuwanym panelu głośności. Na panelu jest okładka, tytuł i wykonawca; popup dokłada album, pasek postępu oraz poprzedni, odtwarzaj/pauza i następny.
+
+```toml
+[media]
+cover_colors = true   # domyślnie; false zostawia akcent profilu
+```
+
+![Widżet multimediów z ciepłą i z chłodną okładką: wykonawca, pasek postępu i przycisk odtwarzania biorą kolor okładki](docs/media.webp)
+
+Akcent pochodzi z okładki: najbardziej nasycony odcień, który zajmuje sensowną część obrazka, ustawiony na jasność czytelną na panelu. Szara albo czarno-biała okładka zostawia akcent profilu. `[media]` działa samo albo obok `[[widget]]`. [examples/media.rs](examples/media.rs) renderuje widżet z wymyślonym utworem na dowolnym systemie.
+
 ### W Ruście
 
 Górny panel:
@@ -374,7 +387,7 @@ noren rollback [--force]                             # cofnij najnowszą transak
 noren log                                            # lista transakcji
 noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule] do Ctrl+C
 noren schedule <profile.toml>                        # dzisiejsze godziny przełączenia ciemny/jasny
-noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]]
+noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]] i [media]
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
 noren commands <profile.toml> [<nazwa>]              # lista [[command]] albo uruchom jedną
@@ -403,7 +416,7 @@ W planach:
 - [x] Poświata krawędzi ekranu jako status
 - [x] Akordy leader-key, paleta komend, gorące rogi
 - [ ] Zamiennik Alt+Tab z żywymi miniaturami
-- [ ] Widżet multimediów z motywem z okładki
+- [x] Widżet multimediów z motywem z okładki
 - [ ] Przestylowane powiadomienia
 - [ ] Karta rice'a do udostępnienia jako PNG
 
@@ -454,10 +467,12 @@ Struktura:
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: aplikacja egui, szklany motyw, zasobnik, paleta komend |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |
 | [src/exec.rs](src/exec.rs) | Widżety zasilane wyjściem dowolnego programu |
+| [src/media/](src/media/) | Widżet „teraz odtwarzane”, akcent z okładki, sesja multimediów Windows |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Drzewo elementów, layout, malowanie |
 | [src/host/](src/host/) | Host Win32, okno podglądu, headless symulator |
 | [src/theme.rs](src/theme.rs), [src/text.rs](src/text.rs) | Motywy i tekst |
 | [examples/pulse.rs](examples/pulse.rs) | Widżet monitora systemu |
+| [examples/media.rs](examples/media.rs) | Widżet multimediów z wymyślonym utworem, do zrzutów |
 
 ## Podziękowania
 
