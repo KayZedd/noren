@@ -31,7 +31,7 @@ impl<T: Send + 'static> Sampler<T> {
         });
         let worker = Arc::clone(&shared);
         let thread = std::thread::Builder::new()
-            .name("deskwidgets-sampler".into())
+            .name("noren-sampler".into())
             .spawn(move || {
                 loop {
                     let value = collect();

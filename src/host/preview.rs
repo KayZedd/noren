@@ -117,7 +117,7 @@ impl ApplicationHandler for App {
             return;
         }
         let attributes = Window::default_attributes()
-            .with_title("deskwidgets preview")
+            .with_title("noren preview")
             .with_inner_size(LogicalSize::new(self.size.0, self.size.1));
         let result = event_loop
             .create_window(attributes)

@@ -44,7 +44,7 @@ use windows::core::{BOOL, PCWSTR, w};
 use super::{Display, Entry, SurfaceOptions, rgba_to_bgra, select_display};
 use crate::surface::{Layer, Placement, Response, Surface};
 
-const CLASS: PCWSTR = w!("deskwidgets.surface");
+const CLASS: PCWSTR = w!("noren.surface");
 const APPBAR_MESSAGE: u32 = WM_APP + 41;
 const MENU_QUIT: usize = 1;
 /// One wheel notch scrolls this many logical pixels.
@@ -253,16 +253,11 @@ fn context_menu(hwnd: HWND) -> bool {
 }
 
 fn report_error(error: &str) {
-    eprintln!("deskwidgets: {error}");
+    eprintln!("noren: {error}");
     let message: Vec<u16> = error.encode_utf16().chain(Some(0)).collect();
     // Both strings outlive the synchronous dialog.
     unsafe {
-        MessageBoxW(
-            None,
-            PCWSTR(message.as_ptr()),
-            w!("deskwidgets"),
-            MB_OK | MB_ICONERROR,
-        );
+        MessageBoxW(None, PCWSTR(message.as_ptr()), w!("noren"), MB_OK | MB_ICONERROR);
     }
 }
 
@@ -427,7 +422,7 @@ impl Host {
             CreateWindowExW(
                 WS_EX_LAYERED | WS_EX_TOOLWINDOW,
                 CLASS,
-                w!("deskwidgets"),
+                w!("noren"),
                 WS_POPUP,
                 0,
                 0,

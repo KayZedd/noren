@@ -1,4 +1,4 @@
-# deskwidgets
+# noren
 
 A pure-Rust framework for customizing the Windows desktop. It covers top panels with popups, desktop widgets, overlays and HUDs. You describe UI as declarative element trees. Everything is rendered in software into per-pixel-alpha windows. The license is MIT, and so is every dependency's license.
 
@@ -49,8 +49,8 @@ Surfaces work in logical pixels relative to their monitor. Hosts convert to and 
 ## Usage
 
 ```rust,ignore
-use deskwidgets::host::{self, Entry, SurfaceOptions};
-use deskwidgets::{Panel, PanelConfig, Theme};
+use noren::host::{self, Entry, SurfaceOptions};
+use noren::{Panel, PanelConfig, Theme};
 
 let mut panel = Panel::new(PanelConfig::default(), Theme::kanagawa_wave());
 panel.add(MyWidget::new()); // impl Widget
@@ -60,8 +60,8 @@ host::run(vec![Entry::new(panel, SurfaceOptions::panel())])?;
 Desktop widget pinned to the bottom-right corner, below all windows:
 
 ```rust,ignore
-use deskwidgets::surface::{Anchor, FloatingConfig, Layer};
-use deskwidgets::Floating;
+use noren::surface::{Anchor, FloatingConfig, Layer};
+use noren::Floating;
 
 let config = FloatingConfig { anchor: Anchor::BottomRight, layer: Layer::Desktop, ..Default::default() };
 let clock = Floating::new(Clock::default(), config, Theme::kanagawa_wave()); // impl View
@@ -77,6 +77,43 @@ cargo run --example pulse -- --screenshot pulse.png --popup   # headless PNG
 ```
 
 On Windows, GPU load comes from the `GPU Engine` performance counters, the same source Task Manager uses. Temperature reads "n/a" when no sensor is exposed to user mode, as in the plasmoid.
+
+## Palettes
+
+`noren::palette` builds a whole color system from one accent color, in OKLCH:
+- Each ramp has twelve steps with fixed roles: backgrounds, borders, solid fills, text.
+- Neutrals are tinted toward the accent hue.
+- Positive, warning and negative colors share the accent's lightness and chroma.
+- 16 ANSI colors are included.
+
+Text steps are pushed until they pass APCA contrast targets against the background. The tests check this for every hue, in dark and light mode, at both contrast levels.
+
+```sh
+noren palette '#7e9cd8'                     # swatches in the terminal
+noren palette '#7e9cd8' --light --high      # light mode, high contrast
+noren palette '#7e9cd8' --export terminal   # also: vscode, css, kde, firefox
+```
+
+## Transactional ricing
+
+A rice is a `profile.toml`: a palette plus the targets it is pushed to. Supported targets:
+- Windows accent and title bars (per-user registry)
+- Windows Terminal
+- VS Code
+- Firefox
+
+```sh
+noren diff kanagawa.toml       # what would change
+noren apply kanagawa.toml      # one transaction
+noren rollback                 # exact undo of the newest transaction
+noren log
+```
+
+Every write is recorded in a journal with the previous bytes **before** it happens. A failed apply undoes what it already wrote. Rollback restores a value only if it still holds what noren wrote. Anything you changed afterwards is reported and left alone, unless you pass `--force`.
+
+JSON configs are edited in place, so comments, key order and formatting survive. CSS and `user.js` get a marked `noren:begin` / `noren:end` block, and everything around it stays yours.
+
+The profile format is documented in [`src/rice/profile.rs`](src/rice/profile.rs).
 
 ## Fonts
 

@@ -13,11 +13,11 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use deskwidgets::components::{SparklinePaint, card, plasmoid_heading, ring, sparkline};
-use deskwidgets::host::{Entry, MonitorSelect, SurfaceOptions};
-use deskwidgets::surface::MonitorInfo;
-use deskwidgets::tiny_skia::PathBuilder;
-use deskwidgets::{
+use noren::components::{SparklinePaint, card, plasmoid_heading, ring, sparkline};
+use noren::host::{Entry, MonitorSelect, SurfaceOptions};
+use noren::surface::MonitorInfo;
+use noren::tiny_skia::PathBuilder;
+use noren::{
     Canvas, Color, Command, Context, Element, History, Paint, Panel, PanelConfig, Rect, Sampler, Theme,
     Widget, column, container, grid, row, text,
 };
@@ -596,7 +596,7 @@ fn run() -> Result<(), String> {
     }
     if args.preview {
         #[cfg(feature = "preview")]
-        return deskwidgets::host::preview::run(
+        return noren::host::preview::run(
             vec![Entry::new(panel, SurfaceOptions::panel())],
             1280.0,
             720.0,
@@ -606,13 +606,13 @@ fn run() -> Result<(), String> {
         return Err("rebuild with --features preview".into());
     }
     let monitor = args.monitor.map_or(MonitorSelect::Primary, MonitorSelect::Index);
-    deskwidgets::host::run(vec![Entry::new(panel, SurfaceOptions::panel().on(monitor))])
+    noren::host::run(vec![Entry::new(panel, SurfaceOptions::panel().on(monitor))])
 }
 
 /// Renders the revealed panel (optionally with its popup) on a virtual 1280×720 monitor after a
 /// few samples and writes a PNG.
 fn screenshot(mut panel: Panel, path: &Path, args: &Args, wallpaper: Color) -> Result<(), String> {
-    use deskwidgets::host::sim::Simulator;
+    use noren::host::sim::Simulator;
     let start = Instant::now();
     let mut sim = Simulator::new(
         MonitorInfo {
