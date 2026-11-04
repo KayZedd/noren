@@ -47,6 +47,11 @@ border = "accent.7"
 # state = "ci"
 # edges = ["top"]
 
+# [[widget]]             # any program printing a line or waybar JSON, shown by `noren panel`
+# name = "weather"
+# run = ["curl", "-s", "wttr.in/?format=%t"]
+# interval = 600
+
 # [schedule]             # light from sunrise, dark from 21:00 while Live holds the profile
 # light = "sunrise"
 # dark = "21:00"

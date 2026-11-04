@@ -44,6 +44,11 @@
 //! state = "ci"
 //! edges = ["top"]
 //!
+//! [[widget]]              # a program's output on the panel (see `exec`), `noren panel`
+//! name = "weather"
+//! run = ["curl", "-s", "wttr.in/?format=%t"]
+//! interval = 600
+//!
 //! [schedule]               # dark/light by the clock or the sun (see `shell::schedule`)
 //! light = "sunrise"
 //! dark = "21:00"
@@ -61,6 +66,7 @@ use serde_json::{Value, json};
 
 use super::merge::{JsonEdit, merge_jsonc, replace_block};
 use super::{Change, Slot, Store};
+use crate::exec::ExecConfig;
 use crate::palette::{Palette, PaletteSpec, export};
 use crate::shell::command::{ChordsConfig, CommandConfig, Commands, CornersConfig};
 use crate::shell::focus::{Focus, FocusConfig, Xray, XrayConfig};
@@ -98,6 +104,9 @@ pub struct Profile {
     /// Screen edges lit by a state (see [`crate::shell::glow`]).
     #[serde(default)]
     pub glow: Vec<GlowConfig>,
+    /// Programs shown as panel widgets by `noren panel` (see [`crate::exec`]).
+    #[serde(default)]
+    pub widget: Vec<ExecConfig>,
     /// Dark and light by the clock or the sun, held by `noren run`.
     pub schedule: Option<ScheduleConfig>,
 }
@@ -425,6 +434,18 @@ profile = "ff"
         assert!(bad.contains("[xray] key"), "{bad}");
         let bad = Profile::parse(&format!("{base}[focus]\ndim = 1.0\n")).unwrap_err();
         assert!(bad.contains("[focus] dim"), "{bad}");
+    }
+
+    #[test]
+    fn widgets_parse_and_survive_a_round_trip() {
+        let text = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n\
+                    [[widget]]\nname = \"w\"\nrun = [\"curl\", \"-s\"]\ninterval = 60\n\
+                    on_click = [\"explorer.exe\"]\n";
+        let p = Profile::parse(text).unwrap();
+        assert_eq!(p.widget.len(), 1);
+        assert_eq!(p.widget[0].interval, Some(60.0));
+        assert_eq!(Profile::parse(&toml::to_string(&p).unwrap()).unwrap(), p);
+        assert!(Profile::parse(&text.replace("interval", "every")).is_err());
     }
 
     #[test]

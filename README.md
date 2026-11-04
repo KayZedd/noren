@@ -293,6 +293,40 @@ Surfaces work in logical pixels relative to their monitor. Hosts convert to and 
 
 ## Building widgets
 
+### From any program
+
+No Rust needed: list programs in the profile and `noren panel` shows each one as a widget on a top panel colored by the profile's palette.
+
+```toml
+[[widget]]
+name = "weather"
+run = ["curl", "-s", "wttr.in/Warsaw?format=%t"]
+interval = 600                 # seconds between runs; leave out for a program that keeps printing
+on_click = ["explorer.exe", "https://wttr.in/Warsaw"]   # instead of opening the popup
+
+[[widget]]
+name = "build"
+run = ["pwsh", "-NoProfile", "-File", "build-status.ps1"]
+interval = 30
+```
+
+![Three program widgets on the panel: a ring with 42%, a clock and a failing script](docs/widgets.webp)
+
+Every line the program prints is one update. Plain text is shown as it is. A line starting with `{` is JSON in the shape waybar's custom modules use, so their scripts work unchanged:
+
+```json
+{"text": "21°", "tooltip": "Clear sky", "class": "ok", "percentage": 40, "rows": [["Humidity", "60%"], ["Wind", "12 km/h"]]}
+```
+
+All fields are optional. `class` (a string or a list) picks the color: `ok`, `warn`, `fail` or `busy` (waybar's `good`, `warning`, `critical` work too), and `color = "#rrggbb"` overrides it. `percentage` draws a ring. `tooltip` and `rows` fill the popup. With `interval` the last line of each run counts; without it the program runs as long as the panel and is restarted 5 s after it exits. Programs start without a shell and without a console window. A program that cannot start, or prints broken JSON, shows a red `!` with the reason in the popup.
+
+```sh
+noren panel my-rice.toml                       # Windows: the panel, Quit in its right-click menu ends it
+noren panel my-rice.toml --screenshot out.png  # any OS: render once to a PNG
+```
+
+### In Rust
+
 A top panel:
 
 ```rust,ignore
@@ -340,6 +374,7 @@ noren rollback [--force]                             # undo the newest transacti
 noren log                                            # list transactions
 noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule] until Ctrl+C
 noren schedule <profile.toml>                        # today's dark/light switch times
+noren panel <profile.toml> [--monitor <n>]           # top panel with the [[widget]] programs
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
 noren commands <profile.toml> [<name>]               # list [[command]]s, or run one
@@ -359,7 +394,7 @@ Done:
 - [x] noren studio: management app with a tray icon
 
 Planned:
-- [ ] Any program printing JSON is a widget
+- [x] Any program printing JSON is a widget
 - [ ] Widgets glued to other apps' windows
 - [ ] Live DWM thumbnail mirrors
 - [ ] Layouts per foreground app and virtual desktop
@@ -418,6 +453,7 @@ Layout:
 | [src/bin/noren.rs](src/bin/noren.rs) | Command line |
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: egui app, glass theme, tray, command palette |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |
+| [src/exec.rs](src/exec.rs) | Widgets fed by any program's output |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Element tree, layout, painting |
 | [src/host/](src/host/) | Win32 host, preview window, headless simulator |
 | [src/theme.rs](src/theme.rs), [src/text.rs](src/text.rs) | Themes and text |

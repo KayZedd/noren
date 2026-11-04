@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use noren::Color;
+use noren::host::{Entry, MonitorSelect, SurfaceOptions};
 use noren::palette::{Contrast, Mode, Palette, PaletteSpec, export};
 use noren::rice::{self, Journal, Profile, SystemStore, describe};
 use noren::shell::{self, Rules, State, state};
@@ -19,6 +20,8 @@ usage:
   noren log                        list transactions
   noren run <profile.toml>         hold [[window]] rules, [focus], [xray], chords, hot
                                    corners, [[glow]] and [schedule] until Ctrl+C
+  noren panel <profile.toml>       a top panel with the profile's [[widget]] programs
+                                   [--monitor <n>] [--screenshot <out.png>]
   noren schedule <profile.toml>    today's dark/light switch times from [schedule]
   noren commands <profile.toml>    list the profile's [[command]]s
   noren commands <profile.toml> <name>
@@ -62,7 +65,10 @@ fn positionals(args: &[String]) -> Vec<&str> {
     for a in args {
         if skip {
             skip = false;
-        } else if matches!(a.as_str(), "--journal" | "--export" | "--state-dir") {
+        } else if matches!(
+            a.as_str(),
+            "--journal" | "--export" | "--state-dir" | "--screenshot" | "--monitor"
+        ) {
             skip = true;
         } else if !a.starts_with("--") {
             out.push(a.as_str());
@@ -88,6 +94,35 @@ fn journal(args: &[String]) -> Result<Journal, String> {
         None => Journal::default_dir().ok_or("cannot find a journal directory, pass --journal")?,
     };
     Journal::open(&dir).map_err(|e| format!("{}: {e}", dir.display()))
+}
+
+/// Renders the revealed panel on a virtual 1280x720 monitor after 1.5 s and writes a PNG.
+fn screenshot(mut panel: noren::Panel, path: &std::path::Path) -> Result<(), String> {
+    use noren::host::sim::Simulator;
+    use noren::surface::MonitorInfo;
+    use std::time::{Duration, Instant};
+    let start = Instant::now();
+    let background = panel.theme().alternate_background;
+    panel.set_viewport(1280.0, 720.0, 1.0);
+    panel.reveal_now();
+    let mut sim = Simulator::new(
+        MonitorInfo {
+            width: 1280.0,
+            height: 720.0,
+            scale: 1.0,
+        },
+        background,
+    );
+    sim.add(Box::new(panel));
+    sim.set_pointer(Some((640.0, 20.0)));
+    // Long enough for programs that print at once; streaming ones show what they printed.
+    while start.elapsed() < Duration::from_millis(1500) {
+        sim.tick(Instant::now());
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let now = Instant::now();
+    sim.tick(now);
+    sim.render(now).save_png(path).map_err(|e| e.to_string())
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -160,6 +195,23 @@ fn run(args: &[String]) -> Result<(), String> {
             let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;
             let dir = option(rest, "--state-dir").map(PathBuf::from);
             shell::run(&profile, dir).map_err(|e| e.to_string())
+        }
+        "panel" => {
+            let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;
+            let theme = profile.palette().theme(noren::Theme::aizome());
+            let panel = noren::exec::panel(&profile.widget, theme)?;
+            if let Some(out) = option(rest, "--screenshot") {
+                return screenshot(panel, out.as_ref());
+            }
+            let monitor = match option(rest, "--monitor") {
+                // 1-based, like `monitor = N` in window rules.
+                Some(n) => match n.parse::<usize>() {
+                    Ok(i) if i >= 1 => MonitorSelect::Index(i - 1),
+                    _ => return Err(format!("bad monitor {n:?}, monitors count from 1")),
+                },
+                None => MonitorSelect::Primary,
+            };
+            noren::host::run(vec![Entry::new(panel, SurfaceOptions::panel().on(monitor))])
         }
         "schedule" => {
             let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;

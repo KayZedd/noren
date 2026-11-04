@@ -293,6 +293,40 @@ Powierzchnie działają w pikselach logicznych względem swojego monitora. Hosty
 
 ## Budowanie widżetów
 
+### Z dowolnego programu
+
+Bez Rusta: wypisz programy w profilu, a `noren panel` pokaże każdy jako widżet na górnym panelu w kolorach palety profilu.
+
+```toml
+[[widget]]
+name = "weather"
+run = ["curl", "-s", "wttr.in/Warsaw?format=%t"]
+interval = 600                 # sekundy między uruchomieniami; pomiń dla programu, który pisze cały czas
+on_click = ["explorer.exe", "https://wttr.in/Warsaw"]   # zamiast otwierania popupu
+
+[[widget]]
+name = "build"
+run = ["pwsh", "-NoProfile", "-File", "build-status.ps1"]
+interval = 30
+```
+
+![Trzy widżety z programów na panelu: pierścień z 42%, zegar i skrypt z błędem](docs/widgets.webp)
+
+Każda linia wypisana przez program to jedna aktualizacja. Zwykły tekst jest pokazywany tak, jak jest. Linia zaczynająca się od `{` to JSON w kształcie, którego używają własne moduły waybara, więc ich skrypty działają bez zmian:
+
+```json
+{"text": "21°", "tooltip": "Clear sky", "class": "ok", "percentage": 40, "rows": [["Humidity", "60%"], ["Wind", "12 km/h"]]}
+```
+
+Wszystkie pola są opcjonalne. `class` (napis albo lista) wybiera kolor: `ok`, `warn`, `fail` albo `busy` (działają też waybarowe `good`, `warning`, `critical`), a `color = "#rrggbb"` go nadpisuje. `percentage` rysuje pierścień. `tooltip` i `rows` wypełniają popup. Z `interval` liczy się ostatnia linia każdego uruchomienia; bez niego program działa tak długo jak panel i startuje ponownie 5 s po wyjściu. Programy startują bez powłoki i bez okna konsoli. Program, który nie może wystartować albo wypisuje zepsuty JSON, pokazuje czerwony `!` z powodem w popupie.
+
+```sh
+noren panel my-rice.toml                       # Windows: panel, kończy go Quit w menu pod prawym przyciskiem
+noren panel my-rice.toml --screenshot out.png  # dowolny system: jednorazowy render do PNG
+```
+
+### W Ruście
+
 Górny panel:
 
 ```rust,ignore
@@ -340,6 +374,7 @@ noren rollback [--force]                             # cofnij najnowszą transak
 noren log                                            # lista transakcji
 noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule] do Ctrl+C
 noren schedule <profile.toml>                        # dzisiejsze godziny przełączenia ciemny/jasny
+noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]]
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
 noren commands <profile.toml> [<nazwa>]              # lista [[command]] albo uruchom jedną
@@ -359,7 +394,7 @@ Zrobione:
 - [x] noren studio: aplikacja do zarządzania z ikoną w zasobniku
 
 W planach:
-- [ ] Każdy program wypisujący JSON jest widżetem
+- [x] Każdy program wypisujący JSON jest widżetem
 - [ ] Widżety przyklejone do okien innych aplikacji
 - [ ] Żywe lustra miniatur DWM
 - [ ] Układy per aplikacja na pierwszym planie i per pulpit wirtualny
@@ -418,6 +453,7 @@ Struktura:
 | [src/bin/noren.rs](src/bin/noren.rs) | Wiersz poleceń |
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: aplikacja egui, szklany motyw, zasobnik, paleta komend |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |
+| [src/exec.rs](src/exec.rs) | Widżety zasilane wyjściem dowolnego programu |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Drzewo elementów, layout, malowanie |
 | [src/host/](src/host/) | Host Win32, okno podglądu, headless symulator |
 | [src/theme.rs](src/theme.rs), [src/text.rs](src/text.rs) | Motywy i tekst |

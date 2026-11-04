@@ -12,6 +12,7 @@ pub mod anim;
 pub mod color;
 pub mod components;
 pub mod element;
+pub mod exec;
 pub mod geom;
 pub mod history;
 pub mod host;
