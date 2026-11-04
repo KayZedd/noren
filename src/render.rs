@@ -230,6 +230,23 @@ fn clip_mask(width: u32, height: u32, clip: Rect, scale: f32) -> Option<Mask> {
     Some(mask)
 }
 
+/// Lays out `root` at its content size and paints it on `background` at `scale` (exports such
+/// as the rice card). `None` when the content is empty.
+pub fn snapshot<A>(
+    root: crate::Element<A>,
+    theme: &Theme,
+    text: &mut TextSystem,
+    scale: f32,
+    background: Color,
+) -> Option<Pixmap> {
+    let frame = crate::layout::layout(root, None, None, text, theme.font_size(), &HashMap::new());
+    let (w, h) = frame.size;
+    let mut pixmap = Pixmap::new((w * scale).ceil() as u32, (h * scale).ceil() as u32)?;
+    pixmap.fill(background.to_skia());
+    render_frame(&frame, &mut pixmap, scale, (0.0, 0.0), text, theme, None, 1.0);
+    Some(pixmap)
+}
+
 /// Draws laid-out nodes. `offset` shifts the whole frame (slide animations), `pointer` is the
 /// hover position in the same logical coordinates as the frame.
 #[allow(clippy::too_many_arguments)]

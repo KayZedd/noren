@@ -110,6 +110,16 @@ Te same kroki, dla skryptów i CI. `cargo install --path .` daje `noren` w `PATH
 
 Tabela, której nie podasz, nie jest ruszana. Każdy cel przyjmuje `path = "..."`, żeby wskazać niestandardowy plik konfiguracji. Pełny format jest opisany w [src/rice/profile.rs](src/rice/profile.rs).
 
+### Udostępnianie rice'a
+
+`noren card` renderuje profil do jednego PNG: nazwa, rampy akcentu i neutralna, 16 kolorów terminala na przykładowym prompcie i to, co profil ustawia. W noren studio to **Karta do udostępnienia…** na stronie Profil.
+
+```sh
+noren card my-rice.toml card.png              # domyślnie 2x; --scale 1 daje mniejszy plik
+```
+
+![Karta rice'a dla różowego profilu: rampy, kolory terminala i używane funkcje](docs/card.webp)
+
 ## Reguły okien
 
 Tabele `[[window]]` w tym samym profilu przestylowują okna innych aplikacji, dopóki działa `noren run`. Ctrl+C przywraca każde okno do stanu sprzed.
@@ -388,6 +398,7 @@ noren log                                            # lista transakcji
 noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule] do Ctrl+C
 noren schedule <profile.toml>                        # dzisiejsze godziny przełączenia ciemny/jasny
 noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]] i [media]
+noren card <profile.toml> <out.png> [--scale <s>]    # profil jako PNG do udostępnienia
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
 noren commands <profile.toml> [<nazwa>]              # lista [[command]] albo uruchom jedną
@@ -418,7 +429,7 @@ W planach:
 - [ ] Zamiennik Alt+Tab z żywymi miniaturami
 - [x] Widżet multimediów z motywem z okładki
 - [ ] Przestylowane powiadomienia
-- [ ] Karta rice'a do udostępnienia jako PNG
+- [x] Karta rice'a do udostępnienia jako PNG
 
 ## Ograniczenia
 
@@ -467,6 +478,7 @@ Struktura:
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: aplikacja egui, szklany motyw, zasobnik, paleta komend |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |
 | [src/exec.rs](src/exec.rs) | Widżety zasilane wyjściem dowolnego programu |
+| [src/card.rs](src/card.rs) | Karta rice'a jako PNG |
 | [src/media/](src/media/) | Widżet „teraz odtwarzane”, akcent z okładki, sesja multimediów Windows |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Drzewo elementów, layout, malowanie |
 | [src/host/](src/host/) | Host Win32, okno podglądu, headless symulator |

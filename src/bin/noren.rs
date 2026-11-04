@@ -20,6 +20,8 @@ usage:
   noren log                        list transactions
   noren run <profile.toml>         hold [[window]] rules, [focus], [xray], chords, hot
                                    corners, [[glow]] and [schedule] until Ctrl+C
+  noren card <profile.toml> <out.png>
+                                   a PNG of the profile to share [--scale <s>, default 2]
   noren panel <profile.toml>       a top panel with the profile's [[widget]] programs and [media]
                                    [--monitor <n>] [--screenshot <out.png>]
   noren schedule <profile.toml>    today's dark/light switch times from [schedule]
@@ -67,7 +69,7 @@ fn positionals(args: &[String]) -> Vec<&str> {
             skip = false;
         } else if matches!(
             a.as_str(),
-            "--journal" | "--export" | "--state-dir" | "--screenshot" | "--monitor"
+            "--journal" | "--export" | "--state-dir" | "--screenshot" | "--monitor" | "--scale"
         ) {
             skip = true;
         } else if !a.starts_with("--") {
@@ -211,6 +213,21 @@ fn run(args: &[String]) -> Result<(), String> {
                 None => MonitorSelect::Primary,
             };
             noren::host::run(vec![Entry::new(panel, SurfaceOptions::panel().on(monitor))])
+        }
+        "card" => {
+            let args = positionals(rest);
+            let [profile, out] = args[..] else {
+                return Err("usage: noren card <profile.toml> <out.png> [--scale <s>]".into());
+            };
+            let profile = Profile::load(profile.as_ref())?;
+            let scale = match option(rest, "--scale") {
+                Some(s) => s.parse::<f32>().map_err(|_| format!("bad scale {s:?}"))?,
+                None => 2.0,
+            };
+            let png = noren::card::render(&profile, scale)?;
+            png.save_png(out).map_err(|e| format!("{out}: {e}"))?;
+            println!("{out}");
+            Ok(())
         }
         "schedule" => {
             let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;

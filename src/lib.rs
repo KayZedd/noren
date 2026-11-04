@@ -9,6 +9,7 @@
 //! (windows). All permissively licensed, no attribution UI required.
 
 pub mod anim;
+pub mod card;
 pub mod color;
 pub mod components;
 pub mod element;

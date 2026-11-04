@@ -393,6 +393,30 @@ impl Studio {
         }
     }
 
+    /// Renders the rice card (see [`crate::card`]) to a PNG the user picks.
+    fn save_card(&mut self) {
+        let Ok(profile) = &self.parsed else {
+            return;
+        };
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("PNG", &["png"])
+            .set_file_name(format!("{}.png", profile.name))
+            .save_file()
+        else {
+            return;
+        };
+        let saved =
+            crate::card::render(profile, 2.0).and_then(|png| png.save_png(&path).map_err(|e| e.to_string()));
+        let l = self.lang();
+        match saved {
+            Ok(()) => self.toast(
+                ToastKind::Ok,
+                format!("{}: {}", l.pick("Card saved", "Zapisano kartę"), path.display()),
+            ),
+            Err(e) => self.toast(ToastKind::Error, format!("{}: {e}", path.display())),
+        }
+    }
+
     fn start_live(&mut self) {
         let l = self.lang();
         let profile = match &self.parsed {
@@ -884,6 +908,15 @@ impl Studio {
             }
             if ui.button(l.pick("Save as…", "Zapisz jako…")).clicked() {
                 self.save(true);
+            }
+            if ui
+                .add_enabled(
+                    self.parsed.is_ok(),
+                    egui::Button::new(l.pick("Share card…", "Karta do udostępnienia…")),
+                )
+                .clicked()
+            {
+                self.save_card();
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| match &self.parsed {
                 Ok(p) => {

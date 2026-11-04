@@ -110,6 +110,16 @@ The same steps, for scripts and CI. `cargo install --path .` puts `noren` on you
 
 A table you leave out is never touched. Every target takes `path = "..."` to point at a non-default config file. The full format is documented in [src/rice/profile.rs](src/rice/profile.rs).
 
+### Sharing a rice
+
+`noren card` renders a profile to one PNG: name, accent and neutral ramps, the 16 terminal colors on a sample prompt, and what the profile sets up. In noren studio it is **Share card…** on the Profile page.
+
+```sh
+noren card my-rice.toml card.png              # 2x by default; --scale 1 for a smaller file
+```
+
+![A rice card for a pink profile: ramps, terminal colors and the features it uses](docs/card.webp)
+
 ## Window rules
 
 `[[window]]` tables in the same profile restyle other apps' windows while `noren run` is running. Ctrl+C puts every window back as it was.
@@ -388,6 +398,7 @@ noren log                                            # list transactions
 noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule] until Ctrl+C
 noren schedule <profile.toml>                        # today's dark/light switch times
 noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs and [media]
+noren card <profile.toml> <out.png> [--scale <s>]    # the profile as a PNG to share
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
 noren commands <profile.toml> [<name>]               # list [[command]]s, or run one
@@ -418,7 +429,7 @@ Planned:
 - [ ] Alt+Tab replacement with live thumbnails
 - [x] Media widget themed from the cover art
 - [ ] Restyled notifications
-- [ ] Shareable rice card PNG
+- [x] Shareable rice card PNG
 
 ## Limitations
 
@@ -467,6 +478,7 @@ Layout:
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: egui app, glass theme, tray, command palette |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |
 | [src/exec.rs](src/exec.rs) | Widgets fed by any program's output |
+| [src/card.rs](src/card.rs) | The rice card PNG |
 | [src/media/](src/media/) | Now-playing widget, cover accent, Windows media session |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Element tree, layout, painting |
 | [src/host/](src/host/) | Win32 host, preview window, headless simulator |
