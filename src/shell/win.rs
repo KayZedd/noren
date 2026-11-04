@@ -1,9 +1,13 @@
 //! Win32 side of the shell runtime: finds top-level windows, applies [`Style`]s with
 //! `DwmSetWindowAttribute`, and undoes everything on exit.
 //!
-//! New windows and title changes arrive through an out-of-context `SetWinEventHook`; state
-//! files are polled twice a second. The hook callback only queues the window and wakes the
-//! loop, so no Win32 call made while applying a style can re-enter the runtime.
+//! New windows, title changes and focus changes arrive through out-of-context
+//! `SetWinEventHook`s, the x-ray key through a `WH_KEYBOARD_LL` hook; state files are polled
+//! twice a second. Hook callbacks only queue an event and wake the loop, so no Win32 call made
+//! while applying a style can re-enter the runtime.
+//!
+//! Focus dimming is one layered, click-through popup over the virtual screen, kept directly
+//! behind the foreground window with `SetWindowPos(insert_after = foreground)`.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -13,28 +17,38 @@ use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use windows::Win32::Foundation::{COLORREF, CloseHandle, HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, CloseHandle, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DWMWINDOWATTRIBUTE, DwmGetWindowAttribute, DwmSetWindowAttribute};
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITORINFO,
-    MonitorFromWindow,
+    CreateSolidBrush, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HBRUSH, HDC, HMONITOR,
+    MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
 use windows::Win32::System::Console::SetConsoleCtrlHandler;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, GetCurrentThreadId, OpenProcess, PROCESS_NAME_WIN32,
     PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
 };
 use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
+use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, EVENT_OBJECT_DESTROY, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW, EnumWindows, GA_ROOT,
-    GWL_EXSTYLE, GetAncestor, GetClassNameW, GetMessageW, GetWindowLongPtrW, GetWindowRect, GetWindowTextW,
-    GetWindowThreadProcessId, IsWindow, IsWindowVisible, IsZoomed, LWA_ALPHA, MSG, PostThreadMessageW,
-    SW_MAXIMIZE, SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SetLayeredWindowAttributes, SetTimer,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP,
-    WM_QUIT, WM_TIMER, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
+    CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EVENT_OBJECT_DESTROY,
+    EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW, EVENT_SYSTEM_FOREGROUND,
+    EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EnumWindows, GA_ROOT, GWL_EXSTYLE, GetAncestor,
+    GetClassNameW, GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
+    GetWindowTextW, GetWindowThreadProcessId, HC_ACTION, IsIconic, IsWindow, IsWindowVisible, IsZoomed,
+    KBDLLHOOKSTRUCT, LWA_ALPHA, MSG, PostThreadMessageW, RegisterClassW, SM_CXVIRTUALSCREEN,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SW_MAXIMIZE, SW_RESTORE,
+    SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, WH_KEYBOARD_LL, WINEVENT_OUTOFCONTEXT,
+    WINEVENT_SKIPOWNPROCESS, WM_APP, WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
 };
-use windows::core::{BOOL, PWSTR};
+use windows::core::{BOOL, PWSTR, w};
 
+use super::Live;
+use super::focus::{Focus, Xray};
+use super::keys::Hold;
 use super::rules::{Op, Rules, ScreenRect, Style, WindowInfo, monitor_order, ops, relocate};
 use super::state::{self, State};
 use crate::palette::Palette;
@@ -52,10 +66,20 @@ const SKIP_CLASSES: [&str; 4] = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_S
 const WAKE: u32 = WM_APP + 1;
 const STATE_POLL_MS: u32 = 500;
 
+/// Queue entry from the keyboard hook: x-ray held (`1`) or released (`0`). Not a WinEvent id.
+const XRAY: u32 = 0xFFFF_0001;
+
 static LOOP_THREAD: AtomicU32 = AtomicU32::new(0);
 
 thread_local! {
     static QUEUE: RefCell<Vec<(u32, isize)>> = const { RefCell::new(Vec::new()) };
+    /// The x-ray key state, owned by the keyboard hook (which runs on the loop thread).
+    static HOLD: RefCell<Option<Hold>> = const { RefCell::new(None) };
+}
+
+fn wake() {
+    // SAFETY: wakes GetMessageW so the queue is drained now, not at the next timer tick.
+    let _ = unsafe { PostThreadMessageW(LOOP_THREAD.load(Ordering::SeqCst), WAKE, WPARAM(0), LPARAM(0)) };
 }
 
 /// What noren changed on one window, and what to put back.
@@ -76,44 +100,66 @@ struct Runtime {
     exe: HashMap<isize, String>,
     moved: HashSet<isize>,
     own_pid: u32,
+    xray: Option<Xray>,
+    xray_on: bool,
+    focus: Option<(Focus, HWND)>,
 }
 
-/// Applies `rules` to every window until Ctrl+C or the console closes, then restores every
-/// window it touched.
-pub fn run(rules: Rules, palette: Palette, state_dir: Option<PathBuf>) -> io::Result<()> {
+fn win_event_hook(event: u32) -> HWINEVENTHOOK {
+    // SAFETY: out-of-context hook; `on_event` runs on this thread inside GetMessageW.
+    unsafe {
+        SetWinEventHook(
+            event,
+            event,
+            None,
+            Some(on_event),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        )
+    }
+}
+
+/// Holds `live` until Ctrl+C or the console closes, then restores every window it touched.
+pub fn run(live: Live, palette: Palette, state_dir: Option<PathBuf>) -> io::Result<()> {
+    let Live { rules, focus, xray } = live;
     // SAFETY: plain Win32 calls; the hook and handler only touch thread-safe statics or the
     // thread-local queue of the thread that installed them.
     unsafe {
         LOOP_THREAD.store(GetCurrentThreadId(), Ordering::SeqCst);
         SetConsoleCtrlHandler(Some(on_ctrl), true).map_err(io::Error::other)?;
-        let flags = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
-        let show = SetWinEventHook(
-            EVENT_OBJECT_SHOW,
-            EVENT_OBJECT_SHOW,
-            None,
-            Some(on_event),
-            0,
-            0,
-            flags,
-        );
-        let name = SetWinEventHook(
-            EVENT_OBJECT_NAMECHANGE,
-            EVENT_OBJECT_NAMECHANGE,
-            None,
-            Some(on_event),
-            0,
-            0,
-            flags,
-        );
-        let destroy = SetWinEventHook(
-            EVENT_OBJECT_DESTROY,
-            EVENT_OBJECT_DESTROY,
-            None,
-            Some(on_event),
-            0,
-            0,
-            flags,
-        );
+        let mut hooks: Vec<HWINEVENTHOOK> =
+            [EVENT_OBJECT_SHOW, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_DESTROY]
+                .into_iter()
+                .map(win_event_hook)
+                .collect();
+        let overlay = match &focus {
+            Some(f) => Some(create_overlay(f.colorref(&palette), f.alpha)?),
+            None => None,
+        };
+        if overlay.is_some() {
+            hooks.extend(
+                [
+                    EVENT_SYSTEM_FOREGROUND,
+                    EVENT_SYSTEM_MINIMIZESTART,
+                    EVENT_SYSTEM_MINIMIZEEND,
+                    EVENT_OBJECT_LOCATIONCHANGE,
+                ]
+                .into_iter()
+                .map(win_event_hook),
+            );
+        }
+        let keyboard = match &xray {
+            Some(x) => {
+                HOLD.with(|h| *h.borrow_mut() = Some(Hold::new(x.combo.clone())));
+                let module = GetModuleHandleW(None).map_err(io::Error::other)?;
+                Some(
+                    SetWindowsHookExW(WH_KEYBOARD_LL, Some(on_key), Some(module.into()), 0)
+                        .map_err(io::Error::other)?,
+                )
+            }
+            None => None,
+        };
         let watch_states = rules.uses_states() && state_dir.is_some();
         let mut rt = Runtime {
             rules,
@@ -124,25 +170,52 @@ pub fn run(rules: Rules, palette: Palette, state_dir: Option<PathBuf>) -> io::Re
             exe: HashMap::new(),
             moved: HashSet::new(),
             own_pid: GetCurrentProcessId(),
+            xray,
+            xray_on: false,
+            focus: focus.zip(overlay),
         };
         if watch_states {
             rt.states = rt.read_states();
+        }
+        if watch_states || rt.xray.is_some() {
             SetTimer(None, 0, STATE_POLL_MS, None);
         }
         rt.refresh_all();
+        rt.update_focus();
         eprintln!(
-            "noren: {} windows styled, Ctrl+C restores them and exits",
-            rt.applied.len()
+            "noren: {} windows styled{}{}, Ctrl+C restores them and exits",
+            rt.applied.len(),
+            if rt.focus.is_some() {
+                ", focus dimming on"
+            } else {
+                ""
+            },
+            match &rt.xray {
+                Some(x) => format!(", hold {} for x-ray", x.combo),
+                None => String::new(),
+            },
         );
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             match msg.message {
-                WM_TIMER if watch_states => {
-                    let now = rt.read_states();
-                    if now != rt.states {
-                        rt.states = now;
-                        rt.refresh_all();
+                WM_TIMER => {
+                    if watch_states {
+                        let now = rt.read_states();
+                        if now != rt.states {
+                            rt.states = now;
+                            rt.refresh_all();
+                        }
+                    }
+                    // A key-up the hook never saw must not leave every window see-through.
+                    let lost = HOLD.with(|h| {
+                        h.borrow_mut()
+                            .as_mut()
+                            .and_then(|h| h.verify(|vk| GetAsyncKeyState(vk as i32) < 0))
+                    });
+                    if lost.is_some() {
+                        rt.set_xray(false);
+                        rt.update_focus();
                     }
                 }
                 WAKE => {}
@@ -150,21 +223,98 @@ pub fn run(rules: Rules, palette: Palette, state_dir: Option<PathBuf>) -> io::Re
                     DispatchMessageW(&msg);
                 }
             }
-            for (event, hwnd) in QUEUE.with(|q| std::mem::take(&mut *q.borrow_mut())) {
-                if event == EVENT_OBJECT_DESTROY {
-                    rt.forget(hwnd);
-                } else {
-                    rt.refresh(HWND(hwnd as *mut c_void));
+            let queue = QUEUE.with(|q| std::mem::take(&mut *q.borrow_mut()));
+            let focus_changed = !queue.is_empty();
+            for (event, hwnd) in queue {
+                match event {
+                    EVENT_OBJECT_DESTROY => rt.forget(hwnd),
+                    EVENT_OBJECT_SHOW | EVENT_OBJECT_NAMECHANGE => rt.refresh(HWND(hwnd as *mut c_void)),
+                    XRAY => rt.set_xray(hwnd != 0),
+                    _ => {}
                 }
+            }
+            if focus_changed {
+                rt.update_focus();
             }
         }
 
-        for hook in [show, name, destroy] {
+        for hook in hooks {
             let _ = UnhookWinEvent(hook);
         }
+        if let Some(k) = keyboard {
+            let _ = UnhookWindowsHookEx(k);
+        }
+        rt.xray_on = false;
         rt.restore_all();
+        if let Some((_, overlay)) = rt.focus.take() {
+            let _ = DestroyWindow(overlay);
+        }
     }
     Ok(())
+}
+
+unsafe extern "system" fn overlay_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // SAFETY: default handling for a window we own.
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+}
+
+/// The dim layer: a hidden popup filled with `color`, `alpha` opaque, that never activates and
+/// lets every click through.
+fn create_overlay(color: u32, alpha: u8) -> io::Result<HWND> {
+    // SAFETY: registers a class and creates a window owned by this thread; the brush is owned
+    // by the class for the life of the process.
+    unsafe {
+        let instance = GetModuleHandleW(None).map_err(io::Error::other)?;
+        let brush: HBRUSH = CreateSolidBrush(COLORREF(color));
+        let class = WNDCLASSW {
+            lpfnWndProc: Some(overlay_proc),
+            hInstance: instance.into(),
+            hbrBackground: brush,
+            lpszClassName: w!("noren.focus"),
+            ..Default::default()
+        };
+        if RegisterClassW(&class) == 0 {
+            let _ = DeleteObject(brush.into());
+            return Err(io::Error::last_os_error());
+        }
+        let hwnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            w!("noren.focus"),
+            w!("noren focus"),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(instance.into()),
+            None,
+        )
+        .map_err(io::Error::other)?;
+        SetLayeredWindowAttributes(hwnd, COLORREF(0), alpha, LWA_ALPHA).map_err(io::Error::other)?;
+        Ok(hwnd)
+    }
+}
+
+unsafe extern "system" fn on_key(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code == HC_ACTION as i32 {
+        // SAFETY: for HC_ACTION, lparam points at a KBDLLHOOKSTRUCT for this call.
+        let kb = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+        let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
+        let step = HOLD.with(|h| h.borrow_mut().as_mut().map(|h| h.event(kb.vkCode, down)));
+        if let Some(step) = step {
+            if let Some(on) = step.changed {
+                QUEUE.with(|q| q.borrow_mut().push((XRAY, isize::from(on))));
+                wake();
+            }
+            if step.swallow {
+                return LRESULT(1);
+            }
+        }
+    }
+    // SAFETY: passes the event on unchanged.
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
 unsafe extern "system" fn on_ctrl(_: u32) -> BOOL {
@@ -189,8 +339,7 @@ unsafe extern "system" fn on_event(
         return;
     }
     QUEUE.with(|q| q.borrow_mut().push((event, hwnd.0 as isize)));
-    // SAFETY: wakes GetMessageW so the queue is drained now, not at the next timer tick.
-    let _ = unsafe { PostThreadMessageW(LOOP_THREAD.load(Ordering::SeqCst), WAKE, WPARAM(0), LPARAM(0)) };
+    wake();
 }
 
 unsafe extern "system" fn collect_window(hwnd: HWND, data: LPARAM) -> BOOL {
@@ -362,7 +511,10 @@ impl Runtime {
         let Some(info) = self.info(hwnd) else {
             return;
         };
-        let style = self.rules.resolve(&info, &self.palette, &self.states);
+        let mut style = self.rules.resolve(&info, &self.palette, &self.states);
+        if let Some(x) = self.xray.as_ref().filter(|_| self.xray_on) {
+            style = x.apply(style);
+        }
         let key = hwnd.0 as isize;
         if style == Style::default() && !self.applied.contains_key(&key) {
             return;
@@ -377,6 +529,60 @@ impl Runtime {
         if style != Style::default() {
             self.applied.insert(key, applied);
         }
+    }
+
+    fn set_xray(&mut self, on: bool) {
+        if self.xray_on != on {
+            self.xray_on = on;
+            self.refresh_all();
+        }
+    }
+
+    /// Puts the dim layer right behind the foreground window, or hides it: during x-ray, and
+    /// when the foreground is the desktop, the taskbar, minimized, fullscreen or excluded.
+    fn update_focus(&mut self) {
+        let Some((_, overlay)) = self.focus else {
+            return;
+        };
+        // SAFETY: queries on the foreground window; positioning and hiding our own overlay.
+        unsafe {
+            let fg = GetForegroundWindow();
+            let place = !self.xray_on && !fg.is_invalid() && !IsIconic(fg).as_bool() && self.dims(fg);
+            if !place {
+                let _ = ShowWindow(overlay, SW_HIDE);
+                return;
+            }
+            // The virtual screen can change (monitor plugged in), so it is read every time.
+            let _ = SetWindowPos(
+                overlay,
+                Some(fg),
+                GetSystemMetrics(SM_XVIRTUALSCREEN),
+                GetSystemMetrics(SM_YVIRTUALSCREEN),
+                GetSystemMetrics(SM_CXVIRTUALSCREEN),
+                GetSystemMetrics(SM_CYVIRTUALSCREEN),
+                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        }
+    }
+
+    fn dims(&mut self, fg: HWND) -> bool {
+        let Some(info) = self.info(fg) else {
+            return false;
+        };
+        let mut r = RECT::default();
+        let mut mi = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: read-only queries with correctly sized out structs.
+        let known = unsafe {
+            GetWindowRect(fg, &mut r).is_ok()
+                && GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST), &mut mi).as_bool()
+        };
+        let Some((focus, _)) = &self.focus else {
+            return false;
+        };
+        known && focus.dims(&info.exe, screen_rect(r), screen_rect(mi.rcMonitor))
     }
 
     fn restore_all(&mut self) {
@@ -483,6 +689,9 @@ pub fn list() -> Vec<WindowInfo> {
         moved: HashSet::new(),
         // SAFETY: no preconditions.
         own_pid: unsafe { GetCurrentProcessId() },
+        xray: None,
+        xray_on: false,
+        focus: None,
     };
     top_level_windows()
         .into_iter()

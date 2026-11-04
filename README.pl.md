@@ -107,6 +107,21 @@ noren state                    # lista
 
 Okna z `border = "state:build"` w ciągu pół sekundy robią się zielone, czerwone, bursztynowe albo w kolorze akcentu, kolorami statusu z palety. Wyczyszczony stan oddaje ramkę systemowi. Stany to zwykłe pliki w `%LOCALAPPDATA%\noren\state`, więc hook gita może zapisać stan bez noren w `PATH`.
 
+### Przyciemnianie poza fokusem i x-ray
+
+```toml
+[focus]
+dim = 0.35                     # 0.05 do 0.9: jak ciemne robi się wszystko za oknem z fokusem
+color = "neutral.1"            # hex albo rola z palety, domyślnie czarny
+except = ["mpv.exe"]           # globy exe, które nigdy nie dostają przyciemnienia
+
+[xray]
+key = "Ctrl+Alt+Space"         # modyfikatory plus jeden klawisz: A-Z, 0-9, F1-F24, space, tab, esc, `...
+opacity = 0.2                  # 0.05 do 0.9, domyślnie 0.2
+```
+
+`[focus]` trzyma jedną przepuszczającą kliknięcia warstwę tuż za oknem z fokusem, więc reszta przygasa, a pasek zadań zostaje jasny. Chowa się na pulpicie, przy oknach pełnoekranowych i gdy x-ray jest wciśnięty. `[xray]` robi wszystkie okna przezroczystymi, dopóki trzymasz kombinację, żeby zobaczyć pulpit albo widżet pod nimi; puszczenie oddaje każdemu oknu jego własną przezroczystość, z reguły czy bez. Ostatni klawisz kombinacji jest połykany, modyfikatory nie, a modyfikatory muszą się zgadzać dokładnie: Ctrl+Shift+Alt+Space nie odpala Ctrl+Alt+Space. Oba działają bez reguł `[[window]]` w profilu.
+
 ## FAQ
 
 **Zepsuje mi ustawienia?** Przed zapisem noren zapisuje w `%LOCALAPPDATA%\noren\journal` każdą wartość, którą zaraz nadpisze. Jeśli któryś zapis się nie uda, wykonane już zapisy są cofane. `noren rollback` przywraca poprzednie bajty co do jednego. W teście end-to-end `settings.json` VS Code wrócił identyczny bajt w bajt po apply i rollback.
@@ -219,7 +234,7 @@ noren diff <profile.toml>                            # co zmieni apply
 noren apply <profile.toml>                           # zastosuj jako jedną transakcję
 noren rollback [--force]                             # cofnij najnowszą transakcję
 noren log                                            # lista transakcji
-noren run <profile.toml>                             # trzymaj reguły [[window]] do Ctrl+C
+noren run <profile.toml>                             # trzymaj [[window]], [focus], [xray] do Ctrl+C
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
 noren <komenda> --journal <katalog>                  # dziennik w innym miejscu
@@ -234,12 +249,12 @@ Zrobione:
 - [x] Jedna paleta wypychana do wszystkich celów
 - [x] Deklaratywne reguły okien: rogi, Mica, przezroczystość, kolor ramki, monitor
 - [x] Kolor ramki okna ze stanu (build padł, git brudny) przez `noren state <nazwa> <ok|fail|warn|busy>`
+- [x] Przyciemnianie poza fokusem i klawisz x-ray
 
 W planach:
 - [ ] Każdy program wypisujący JSON jest widżetem
 - [ ] Widżety przyklejone do okien innych aplikacji
 - [ ] Żywe lustra miniatur DWM
-- [ ] Przyciemnianie poza fokusem i klawisz x-ray
 - [ ] Układy per aplikacja na pierwszym planie i per pulpit wirtualny
 - [ ] Położenie widżetów i kolor tekstu dobierane z tapety
 - [ ] Motyw zależny od pory dnia i wschodu słońca
@@ -254,6 +269,7 @@ W planach:
 
 - **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. Zgłoszenia mile widziane.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
+- Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
 - `noren run` musi działać, żeby reguły okien się trzymały. Zabity bez Ctrl+C zostawia okna w swoim stylu, dopóki się nie zamkną.
 - Firefox ignoruje `userChrome.css` do restartu. VS Code i Windows Terminal przeładowują się same.
 - Rollback usuwa pliki utworzone przez noren, ale zostawia pusty folder `chrome` Firefoksa.
@@ -289,7 +305,7 @@ Struktura:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, rampy, eksport do Terminala, VS Code, CSS, KDE, Firefoksa, akcentu Windows |
 | [src/rice/](src/rice/) | Profile, dziennik, apply i rollback, merge JSONC, magazyn rejestru i plików |
-| [src/shell/](src/shell/) | Reguły okien, stany i runtime Win32, który je trzyma |
+| [src/shell/](src/shell/) | Reguły okien, stany, przyciemnianie, x-ray i runtime Win32, który je trzyma |
 | [src/bin/noren.rs](src/bin/noren.rs) | Wiersz poleceń |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Drzewo elementów, layout, malowanie |

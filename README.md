@@ -107,6 +107,21 @@ noren state                    # list
 
 Windows with `border = "state:build"` turn green, red, amber or accent within half a second, in the palette's status colors. A cleared state gives the border back to the system. States are plain files in `%LOCALAPPDATA%\noren\state`, so a git hook can write one without noren on its `PATH`.
 
+### Focus dimming and x-ray
+
+```toml
+[focus]
+dim = 0.35                     # 0.05 to 0.9: how dark everything behind the focused window gets
+color = "neutral.1"            # hex or palette role, default black
+except = ["mpv.exe"]           # exe globs that never get the dim
+
+[xray]
+key = "Ctrl+Alt+Space"         # modifiers plus one key: A-Z, 0-9, F1-F24, space, tab, esc, `...
+opacity = 0.2                  # 0.05 to 0.9, default 0.2
+```
+
+`[focus]` keeps one click-through layer directly behind the focused window, so everything else fades and the taskbar stays bright. It hides on the desktop, for fullscreen windows and while x-ray is held. `[xray]` makes every window see-through while the combo is held, so you can read the desktop or a widget under them; release puts back each window's own opacity, rule or not. The combo's last key is swallowed while held, modifiers are not, and modifiers must match exactly: Ctrl+Shift+Alt+Space does not trigger Ctrl+Alt+Space. Both work with no `[[window]]` rules in the profile.
+
 ## FAQ
 
 **Will it break my settings?** Before writing, noren journals every value it is about to replace in `%LOCALAPPDATA%\noren\journal`. If any write fails, the ones already done are reverted. `noren rollback` restores the previous bytes exactly. In an end-to-end run, a VS Code `settings.json` came back byte-identical after apply and rollback.
@@ -219,7 +234,7 @@ noren diff <profile.toml>                            # what apply would change
 noren apply <profile.toml>                           # apply as one transaction
 noren rollback [--force]                             # undo the newest transaction
 noren log                                            # list transactions
-noren run <profile.toml>                             # hold the [[window]] rules until Ctrl+C
+noren run <profile.toml>                             # hold [[window]], [focus], [xray] until Ctrl+C
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
 noren <command> --journal <dir>                      # journal somewhere else
@@ -234,12 +249,12 @@ Done:
 - [x] One palette pushed to every target
 - [x] Declarative window rules: corners, Mica, opacity, border color, monitor
 - [x] Window border color from state (build failed, git dirty) via `noren state <name> <ok|fail|warn|busy>`
+- [x] Focus dimming and an x-ray hold key
 
 Planned:
 - [ ] Any program printing JSON is a widget
 - [ ] Widgets glued to other apps' windows
 - [ ] Live DWM thumbnail mirrors
-- [ ] Focus dimming and an x-ray hold key
 - [ ] Layouts per foreground app and virtual desktop
 - [ ] Widget placement and text color picked from the wallpaper
 - [ ] Theme by time of day and sunrise
@@ -254,6 +269,7 @@ Planned:
 
 - **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. Reports are welcome.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
+- Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
 - `noren run` must keep running for window rules to hold. If it is killed without Ctrl+C, the windows keep their style until they close.
 - Firefox ignores `userChrome.css` until it restarts. VS Code and Windows Terminal reload on their own.
 - Rollback removes the files noren created but leaves an empty Firefox `chrome` folder behind.
@@ -289,7 +305,7 @@ Layout:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, ramps, exports for Terminal, VS Code, CSS, KDE, Firefox, Windows accent |
 | [src/rice/](src/rice/) | Profiles, journal, apply and rollback, JSONC merge, registry and file store |
-| [src/shell/](src/shell/) | Window rules, states, and the Win32 runtime that holds them |
+| [src/shell/](src/shell/) | Window rules, states, focus dimming, x-ray, and the Win32 runtime that holds them |
 | [src/bin/noren.rs](src/bin/noren.rs) | Command line |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Element tree, layout, painting |

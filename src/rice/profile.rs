@@ -25,6 +25,12 @@
 //! exe = "WindowsTerminal.exe"
 //! backdrop = "acrylic"
 //! border = "state:build"
+//!
+//! [focus]                  # dim behind the focused window (see `shell::focus`)
+//! dim = 0.35
+//!
+//! [xray]                   # hold to see through every window
+//! key = "Ctrl+Alt+Space"
 //! ```
 //!
 //! Every target accepts `path = "..."` to point at a non-default config file.
@@ -38,6 +44,7 @@ use serde_json::{Value, json};
 use super::merge::{JsonEdit, merge_jsonc, replace_block};
 use super::{Change, Slot, Store};
 use crate::palette::{Palette, PaletteSpec, export};
+use crate::shell::focus::{Focus, FocusConfig, Xray, XrayConfig};
 use crate::shell::{Rules, WindowRule};
 
 /// Profile format version this build reads.
@@ -56,6 +63,10 @@ pub struct Profile {
     /// Live window rules, held by `noren run` (see [`crate::shell::rules`]).
     #[serde(default)]
     pub window: Vec<WindowRule>,
+    /// Dim everything behind the focused window (see [`crate::shell::focus`]).
+    pub focus: Option<FocusConfig>,
+    /// Hold a key to see through every window.
+    pub xray: Option<XrayConfig>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -124,6 +135,8 @@ impl Profile {
             ));
         }
         Rules::new(&profile.window)?;
+        profile.focus.as_ref().map(Focus::new).transpose()?;
+        profile.xray.as_ref().map(Xray::new).transpose()?;
         Ok(profile)
     }
 
@@ -359,6 +372,19 @@ profile = "ff"
         );
         let bad = Profile::parse(&format!("{base}[[window]]\nopacity = 0.0\n")).unwrap_err();
         assert!(bad.contains("opacity"), "{bad}");
+    }
+
+    #[test]
+    fn focus_and_xray_parse_and_are_validated_with_the_profile() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n";
+        let p = Profile::parse(&format!("{base}[focus]\ndim = 0.3\n[xray]\nkey = \"Ctrl+Win\"\n")).unwrap();
+        assert_eq!(p.focus.unwrap().dim, 0.3);
+        assert_eq!(p.xray.unwrap().opacity, 0.2);
+        assert!(p.window.is_empty());
+        let bad = Profile::parse(&format!("{base}[xray]\nkey = \"Space\"\n")).unwrap_err();
+        assert!(bad.contains("[xray] key"), "{bad}");
+        let bad = Profile::parse(&format!("{base}[focus]\ndim = 1.0\n")).unwrap_err();
+        assert!(bad.contains("[focus] dim"), "{bad}");
     }
 
     #[test]

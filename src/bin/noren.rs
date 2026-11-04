@@ -17,7 +17,7 @@ usage:
   noren apply <profile.toml>       apply as one transaction
   noren rollback [--force]         undo the newest transaction
   noren log                        list transactions
-  noren run <profile.toml>         hold the profile's [[window]] rules until Ctrl+C
+  noren run <profile.toml>         hold [[window]] rules, [focus] and [xray] until Ctrl+C
   noren windows [<profile.toml>]   list windows, and which rules match them
   noren state                      list states
   noren state <name> <ok|fail|warn|busy|clear>
