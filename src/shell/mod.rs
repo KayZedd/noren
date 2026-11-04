@@ -62,6 +62,66 @@ pub fn run(profile: &Profile, state_dir: Option<PathBuf>) -> io::Result<()> {
     }
 }
 
+/// A runtime held on a background thread, for apps that keep their own UI loop (the studio).
+/// Dropping it without [`Runner::stop`] leaves the thread holding windows until the process
+/// exits, so stop it first.
+pub struct Runner {
+    #[cfg(windows)]
+    tid: u32,
+    thread: std::thread::JoinHandle<io::Result<()>>,
+}
+
+impl Runner {
+    /// Starts holding `profile` on a new thread. Fails fast on a bad profile, and on hook or
+    /// overlay errors raised before the loop starts.
+    pub fn spawn(profile: &Profile, state_dir: Option<PathBuf>) -> io::Result<Self> {
+        let live = Live::new(profile).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        #[cfg(windows)]
+        {
+            let palette = profile.palette();
+            let dir = state_dir.or_else(state::default_dir);
+            let (tx, rx) = std::sync::mpsc::channel();
+            let thread = std::thread::Builder::new()
+                .name("noren-live".into())
+                .spawn(move || {
+                    win::hold(live, palette, dir, |tid| {
+                        let _ = tx.send(tid);
+                    })
+                })?;
+            match rx.recv() {
+                Ok(tid) => Ok(Self { tid, thread }),
+                // The thread ended before its loop started: hand back its error.
+                Err(_) => Err(thread
+                    .join()
+                    .unwrap_or_else(|_| Err(io::Error::other("live runtime panicked")))
+                    .err()
+                    .unwrap_or_else(|| io::Error::other("live runtime ended at start"))),
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (live, state_dir);
+            Err(unsupported("holding a profile live"))
+        }
+    }
+
+    /// Whether the runtime thread has ended on its own (an error after start).
+    pub fn is_finished(&self) -> bool {
+        self.thread.is_finished()
+    }
+
+    /// Ends the loop, waits until every window is restored, and returns the runtime's result.
+    pub fn stop(self) -> io::Result<()> {
+        #[cfg(windows)]
+        if !self.thread.is_finished() {
+            win::stop(self.tid)?;
+        }
+        self.thread
+            .join()
+            .unwrap_or_else(|_| Err(io::Error::other("live runtime panicked")))
+    }
+}
+
 /// Every top-level window rules can match, with the facts they match on.
 pub fn windows() -> io::Result<Vec<WindowInfo>> {
     #[cfg(windows)]

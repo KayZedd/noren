@@ -37,12 +37,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EnumWindows, GA_ROOT, GWL_EXSTYLE, GetAncestor,
     GetClassNameW, GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
     GetWindowTextW, GetWindowThreadProcessId, HC_ACTION, IsIconic, IsWindow, IsWindowVisible, IsZoomed,
-    KBDLLHOOKSTRUCT, LWA_ALPHA, MSG, PostThreadMessageW, RegisterClassW, SM_CXVIRTUALSCREEN,
-    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SW_MAXIMIZE, SW_RESTORE,
-    SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, WH_KEYBOARD_LL, WINEVENT_OUTOFCONTEXT,
-    WINEVENT_SKIPOWNPROCESS, WM_APP, WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
+    KBDLLHOOKSTRUCT, LWA_ALPHA, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, RegisterClassW,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SW_MAXIMIZE,
+    SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetLayeredWindowAttributes, SetTimer,
+    SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, WH_KEYBOARD_LL,
+    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER,
+    WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{BOOL, PWSTR, w};
 
@@ -122,12 +122,30 @@ fn win_event_hook(event: u32) -> HWINEVENTHOOK {
 
 /// Holds `live` until Ctrl+C or the console closes, then restores every window it touched.
 pub fn run(live: Live, palette: Palette, state_dir: Option<PathBuf>) -> io::Result<()> {
+    // SAFETY: the handler only posts to the loop thread.
+    unsafe { SetConsoleCtrlHandler(Some(on_ctrl), true) }.map_err(io::Error::other)?;
+    hold(live, palette, state_dir, |_| {})
+}
+
+/// Holds `live` on the calling thread until [`stop`] (or `WM_QUIT`) reaches it, then restores
+/// every window it touched. `ready` gets the thread id once the thread has a message queue,
+/// so a `stop` sent after it is never lost. One runtime per process.
+pub fn hold(
+    live: Live,
+    palette: Palette,
+    state_dir: Option<PathBuf>,
+    ready: impl FnOnce(u32),
+) -> io::Result<()> {
     let Live { rules, focus, xray } = live;
     // SAFETY: plain Win32 calls; the hook and handler only touch thread-safe statics or the
     // thread-local queue of the thread that installed them.
     unsafe {
-        LOOP_THREAD.store(GetCurrentThreadId(), Ordering::SeqCst);
-        SetConsoleCtrlHandler(Some(on_ctrl), true).map_err(io::Error::other)?;
+        let tid = GetCurrentThreadId();
+        LOOP_THREAD.store(tid, Ordering::SeqCst);
+        // Any message call creates the thread's queue.
+        let mut probe = MSG::default();
+        let _ = PeekMessageW(&mut probe, None, 0, 0, PM_NOREMOVE);
+        ready(tid);
         let mut hooks: Vec<HWINEVENTHOOK> =
             [EVENT_OBJECT_SHOW, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_DESTROY]
                 .into_iter()
@@ -315,6 +333,12 @@ unsafe extern "system" fn on_key(code: i32, wparam: WPARAM, lparam: LPARAM) -> L
     }
     // SAFETY: passes the event on unchanged.
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+/// Ends the [`hold`] loop running on thread `tid`.
+pub fn stop(tid: u32) -> io::Result<()> {
+    // SAFETY: posting a message to a thread is valid for any id; failure is reported.
+    unsafe { PostThreadMessageW(tid, WM_QUIT, WPARAM(0), LPARAM(0)) }.map_err(io::Error::other)
 }
 
 unsafe extern "system" fn on_ctrl(_: u32) -> BOOL {

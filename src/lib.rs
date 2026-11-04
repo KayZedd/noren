@@ -22,6 +22,7 @@ pub mod render;
 pub mod rice;
 pub mod sampler;
 pub mod shell;
+pub mod studio;
 pub mod surface;
 pub mod text;
 pub mod theme;
