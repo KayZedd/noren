@@ -1,31 +1,121 @@
+<div align="center">
+
 # noren
 
-A pure-Rust framework for customizing the Windows desktop. It covers top panels with popups, desktop widgets, overlays and HUDs. You describe UI as declarative element trees. Everything is rendered in software into per-pixel-alpha windows. The license is MIT, and so is every dependency's license.
+**Rice Windows like a Linux desktop, and undo it in one command.**<br>
+A pure-Rust framework for panels, desktop widgets, overlays, palettes and transactional theming.
 
-It started as the Windows port of a set of KDE Plasma 6 widgets (`rice`). It reproduces their look and behavior: Kirigami units, the Plasma panel and popup chrome, and color schemes read from `kdeglobals`.
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey.svg)](#limitations)
+[![Rust](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#building)
 
-## Why not an existing UI toolkit
+English | [Polski](README.pl.md)
 
-| Option | Why it was not used |
+</div>
+
+Pick one accent color. noren builds a full palette from it and pushes it to Windows, Windows Terminal, VS Code and Firefox in one transaction. Panels and widgets are drawn with the same palette. Changed your mind? `noren rollback` puts every byte back.
+
+- **One accent, every app.** OKLCH ramps whose text passes APCA contrast, in dark and light mode.
+- **Transactional.** Each write is journaled with the previous bytes before it happens. A failed apply undoes itself.
+- **Your edits survive.** JSON configs keep their comments and key order. Rollback skips anything you changed after the apply.
+- **A rice is a file.** `profile.toml` is versioned, diffable and shareable.
+- **Real desktop surfaces.** Per-pixel-alpha windows that let clicks through, on the desktop layer, as an AppBar or on top.
+- **Pure Rust, MIT all the way down.** No Slint attribution clause, no XAML runtime, no webview.
+
+## What it customizes
+
+| Target | What changes | Where |
+|---|---|---|
+| Windows | Accent color, Start and taskbar accent, title bars and borders, light/dark mode | `HKCU` registry, then a `WM_SETTINGCHANGE` broadcast |
+| Windows Terminal | Adds a color scheme and makes it the default | `settings.json`, BOM and comments kept |
+| VS Code | `workbench.colorCustomizations`, including the terminal ANSI colors | `settings.json`, comments kept |
+| Firefox | `userChrome.css`, plus the pref that enables it | A marked `noren:begin` / `noren:end` block |
+| Your own UI | Panels, widgets and overlays built with noren | `Palette::theme()` |
+
+Exports for anything else: `noren palette <#accent> --export terminal|vscode|css|kde|firefox`.
+
+## Quick start
+
+1. Build it (see [Building](#building)), or `cargo install --path .` to get `noren` on your `PATH`.
+2. Preview a palette:
+   ```sh
+   noren palette '#7e9cd8'
+   ```
+3. Write `kanagawa.toml`:
+   ```toml
+   schema = 1
+   name = "kanagawa"
+
+   [palette]
+   accent = "#7e9cd8"
+   mode = "dark"            # dark | light
+   contrast = "standard"    # standard | high
+
+   [windows]
+   accent_on_title_bars = true
+
+   [terminal]
+   [vscode]
+   ```
+4. See what would change, then apply:
+   ```sh
+   noren diff kanagawa.toml
+   noren apply kanagawa.toml
+   ```
+5. Undo it:
+   ```sh
+   noren rollback
+   ```
+
+A table you leave out is never touched. Every target takes `path = "..."` to point at a non-default config file. The full format is documented in [src/rice/profile.rs](src/rice/profile.rs).
+
+## FAQ
+
+**Will it break my settings?** Before writing, noren journals every value it is about to replace in `%LOCALAPPDATA%\noren\journal`. If any write fails, the ones already done are reverted. `noren rollback` restores the previous bytes exactly. In an end-to-end run, a VS Code `settings.json` came back byte-identical after apply and rollback.
+
+**I changed something by hand after applying. What does rollback do?** It restores only the values that still hold what noren wrote. Everything else is listed as kept. `noren rollback --force` overwrites them anyway.
+
+**Does it need admin rights?** No. It writes only to `HKCU` and to files in your profile.
+
+**Why not Slint, egui, iced or WinUI?** Slint's royalty-free license requires attribution in the shipped app. egui and iced are built around a single application window, and layered, click-through, AppBar and desktop-layer windows fight their event loop. WinUI is not Rust-first and brings a heavy runtime.
+
+**Linux or macOS?** The palette engine, the profile and journal logic, and the whole UI stack run and are tested on Linux. File targets work there too. Registry targets and the native host are Windows only. The `preview` feature opens a dev window on any OS.
+
+## How it works
+
+### Palette
+
+`noren::palette` builds a color system from one accent, in OKLCH (Björn Ottosson's perceptual space):
+
+| Steps | Role |
 |---|---|
-| Slint | Royalty-free license requires attribution in the shipped app |
-| egui / iced | Built around one application window. Layered, click-through, AppBar and desktop-layer windows fight the event loop. |
-| WinUI / XAML | Not Rust-first, heavy runtime |
+| 1-2 | App and subtle backgrounds |
+| 3-5 | Component backgrounds: normal, hover, pressed |
+| 6-8 | Borders and separators |
+| 9-10 | Solid fills: buttons, badges |
+| 11-12 | Low-contrast and high-contrast text |
 
-Desktop customization needs things those toolkits don't model:
-- Windows whose transparent pixels pass clicks through to the desktop.
-- Several of these windows on several monitors, driven by one loop.
-- Auto-hide edges.
-- A fullscreen-app detector.
+- Neutrals are tinted toward the accent hue, so greys match the accent.
+- Positive, warning and negative ramps reuse the accent's lightness and chroma, so no status color sticks out.
+- Text steps are pushed until they meet APCA targets on the background (Lc 90 for body text, Lc 100 with `contrast = "high"`). The tests check 72 hues in both modes at both contrast levels.
+- Colors outside sRGB lose chroma, never lightness or hue.
+- 16 ANSI colors are derived from the same ramps.
 
-The rendering stack is small and permissive:
-- [tiny-skia](https://github.com/linebender/tiny-skia) for paint
-- [cosmic-text](https://github.com/pop-os/cosmic-text) for text
-- [taffy](https://github.com/DioxusLabs/taffy) for flexbox and grid layout
-- [resvg](https://github.com/linebender/resvg) for icons
-- [windows](https://github.com/microsoft/windows-rs) for Win32
+### Transactions
 
-## Architecture
+```
+profile.toml ──► changes ──► plan (skip slots already equal)
+                                │
+                     journal: Pending + previous bytes   (tmp file, then rename)
+                                │
+                     write each slot ── failure ──► revert written slots
+                                │
+                     journal: Applied ──► WM_SETTINGCHANGE "ImmersiveColorSet"
+```
+
+A slot is a registry value or a file. Rollback compares each slot against what the journal says noren wrote, restores the matches, and marks the transaction `RolledBack`. Applying the same profile twice is a no-op.
+
+### Surfaces
 
 ```
 Surface (trait)            one transparent window on one monitor
@@ -44,9 +134,11 @@ host::preview::run         winit window acting as a virtual monitor (any OS)
 host::sim::Simulator       headless desktop: compositing, input routing, PNGs
 ```
 
-Surfaces work in logical pixels relative to their monitor. Hosts convert to and from physical screen coordinates using per-monitor DPI v2. The same `Surface` runs under all three hosts, so most behavior is testable on Linux CI without a display.
+Surfaces work in logical pixels relative to their monitor. Hosts convert to and from physical coordinates with per-monitor DPI v2. The same `Surface` runs under all three hosts, so most behavior is tested on Linux without a display.
 
-## Usage
+## Building widgets
+
+A top panel:
 
 ```rust,ignore
 use noren::host::{self, Entry, SurfaceOptions};
@@ -57,7 +149,7 @@ panel.add(MyWidget::new()); // impl Widget
 host::run(vec![Entry::new(panel, SurfaceOptions::panel())])?;
 ```
 
-Desktop widget pinned to the bottom-right corner, below all windows:
+A desktop widget pinned to the bottom-right corner, below all windows:
 
 ```rust,ignore
 use noren::surface::{Anchor, FloatingConfig, Layer};
@@ -68,7 +160,7 @@ let clock = Floating::new(Clock::default(), config, Theme::kanagawa_wave()); // 
 host::run(vec![Entry::new(clock, SurfaceOptions::default())])?;
 ```
 
-`examples/pulse.rs` is a complete widget. It ports the `systempulse` plasmoid: CPU, RAM and GPU rings, temperature and network, with a popup of stat cards and sparklines.
+[examples/pulse.rs](examples/pulse.rs) is a complete widget, ported from the `systempulse` KDE plasmoid: CPU, RAM and GPU rings, temperature and network, and a popup with stat cards and sparklines.
 
 ```sh
 cargo run --release --example pulse                          # Windows: native panel
@@ -76,50 +168,68 @@ cargo run --example pulse --features preview -- --preview     # any OS: dev wind
 cargo run --example pulse -- --screenshot pulse.png --popup   # headless PNG
 ```
 
-On Windows, GPU load comes from the `GPU Engine` performance counters, the same source Task Manager uses. Temperature reads "n/a" when no sensor is exposed to user mode, as in the plasmoid.
-
-## Palettes
-
-`noren::palette` builds a whole color system from one accent color, in OKLCH:
-- Each ramp has twelve steps with fixed roles: backgrounds, borders, solid fills, text.
-- Neutrals are tinted toward the accent hue.
-- Positive, warning and negative colors share the accent's lightness and chroma.
-- 16 ANSI colors are included.
-
-Text steps are pushed until they pass APCA contrast targets against the background. The tests check this for every hue, in dark and light mode, at both contrast levels.
-
-```sh
-noren palette '#7e9cd8'                     # swatches in the terminal
-noren palette '#7e9cd8' --light --high      # light mode, high contrast
-noren palette '#7e9cd8' --export terminal   # also: vscode, css, kde, firefox
-```
-
-## Transactional ricing
-
-A rice is a `profile.toml`: a palette plus the targets it is pushed to. Supported targets:
-- Windows accent and title bars (per-user registry)
-- Windows Terminal
-- VS Code
-- Firefox
-
-```sh
-noren diff kanagawa.toml       # what would change
-noren apply kanagawa.toml      # one transaction
-noren rollback                 # exact undo of the newest transaction
-noren log
-```
-
-Every write is recorded in a journal with the previous bytes **before** it happens. A failed apply undoes what it already wrote. Rollback restores a value only if it still holds what noren wrote. Anything you changed afterwards is reported and left alone, unless you pass `--force`.
-
-JSON configs are edited in place, so comments, key order and formatting survive. CSS and `user.js` get a marked `noren:begin` / `noren:end` block, and everything around it stays yours.
-
-The profile format is documented in [`src/rice/profile.rs`](src/rice/profile.rs).
-
-## Fonts
+GPU load comes from the `GPU Engine` performance counters, the same source Task Manager uses. Temperature reads "n/a" when no sensor is exposed to user mode.
 
 Text uses the theme's font families and falls back to system fonts. No fonts are bundled. To ship one, call `TextSystem::load_fonts(path)` and check its license.
 
-## Development
+## Command line
+
+```sh
+noren palette <#accent> [--light] [--high]           # swatches in the terminal
+noren palette <#accent> --export terminal            # also: vscode, css, kde, firefox
+noren diff <profile.toml>                            # what apply would change
+noren apply <profile.toml>                           # apply as one transaction
+noren rollback [--force]                             # undo the newest transaction
+noren log                                            # list transactions
+noren <command> --journal <dir>                      # journal somewhere else
+```
+
+## Roadmap
+
+Done:
+- [x] Rice as a versioned TOML file
+- [x] Transactional apply, diff and rollback
+- [x] One palette pushed to every target
+
+Planned:
+- [ ] Declarative window rules: corners, Mica, opacity, border color, monitor
+- [ ] Window border color from state (build failed, git dirty) via `noren state <name> <ok|fail|warn|busy>`
+- [ ] Any program printing JSON is a widget
+- [ ] Widgets glued to other apps' windows
+- [ ] Live DWM thumbnail mirrors
+- [ ] Focus dimming and an x-ray hold key
+- [ ] Layouts per foreground app and virtual desktop
+- [ ] Widget placement and text color picked from the wallpaper
+- [ ] Theme by time of day and sunrise
+- [ ] Ambient edge glow for status
+- [ ] Leader-key chords, command palette, hot corners
+- [ ] Alt+Tab replacement with live thumbnails
+- [ ] Media widget themed from the cover art
+- [ ] Restyled notifications
+- [ ] Shareable rice card PNG
+
+## Limitations
+
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. Reports are welcome.
+- Firefox ignores `userChrome.css` until it restarts. VS Code and Windows Terminal reload on their own.
+- Rollback removes the files noren created but leaves an empty Firefox `chrome` folder behind.
+- Windows does not document the accent registry values. A feature update could change them.
+- Not affiliated with Microsoft or KDE.
+
+## Building
+
+Rust 1.95+ (edition 2024):
+
+```bash
+git clone https://github.com/KayZedd/noren.git
+cd noren
+cargo test --all-targets
+cargo build --release
+```
+
+The binary is `target/release/noren` (`noren.exe` on Windows).
+
+Checks every change must pass:
 
 ```sh
 cargo test --all-targets                                       # gate tests, < 1 s
@@ -129,6 +239,30 @@ cargo clippy --target x86_64-pc-windows-msvc --all-targets     # Win32 host from
 
 Text-rendering tests run only when Noto Sans or DejaVu Sans is installed. Without either they pass trivially.
 
+Layout:
+
+| Path | Role |
+|---|---|
+| [src/palette/](src/palette/) | OKLCH, APCA, ramps, exports for Terminal, VS Code, CSS, KDE, Firefox, Windows accent |
+| [src/rice/](src/rice/) | Profiles, journal, apply and rollback, JSONC merge, registry and file store |
+| [src/bin/noren.rs](src/bin/noren.rs) | Command line |
+| [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |
+| [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Element tree, layout, painting |
+| [src/host/](src/host/) | Win32 host, preview window, headless simulator |
+| [src/theme.rs](src/theme.rs), [src/text.rs](src/text.rs) | Themes and text |
+| [examples/pulse.rs](examples/pulse.rs) | System monitor widget |
+
+## Credits
+
+- [OKLab](https://bottosson.github.io/posts/oklab/) by Björn Ottosson: the color space.
+- [APCA](https://github.com/Myndex/apca-w3) by Andrew Somers: the contrast model.
+- [Radix Colors](https://www.radix-ui.com/colors): the twelve-step ramp roles.
+- [tiny-skia](https://github.com/linebender/tiny-skia), [cosmic-text](https://github.com/pop-os/cosmic-text), [taffy](https://github.com/DioxusLabs/taffy), [resvg](https://github.com/linebender/resvg), [windows-rs](https://github.com/microsoft/windows-rs), [jsonc-parser](https://github.com/dprint/jsonc-parser).
+
+## Support the project
+
+If noren made your desktop yours, a ⭐ helps other people find it. Bug reports from real Windows machines help even more.
+
 ## License
 
-MIT, see [LICENSE](LICENSE).
+[MIT](LICENSE). Windows is a trademark of Microsoft Corporation.

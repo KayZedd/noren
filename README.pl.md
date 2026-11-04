@@ -1,0 +1,268 @@
+<div align="center">
+
+# noren
+
+**Rice'uj Windowsa jak pulpit na Linuksie i cofnij to jedną komendą.**<br>
+Framework w czystym Ruście: panele, widżety pulpitu, nakładki, palety i transakcyjne motywy.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey.svg)](#ograniczenia)
+[![Rust](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#budowanie)
+
+[English](README.md) | Polski
+
+</div>
+
+Wybierasz jeden kolor akcentu. noren buduje z niego pełną paletę i wypycha ją do Windowsa, Windows Terminal, VS Code i Firefoksa w jednej transakcji. Panele i widżety rysują się tą samą paletą. Zmiana zdania? `noren rollback` przywraca każdy bajt.
+
+- **Jeden akcent, wszystkie aplikacje.** Rampy OKLCH, których tekst przechodzi kontrast APCA, w trybie ciemnym i jasnym.
+- **Transakcyjnie.** Każdy zapis trafia do dziennika razem z poprzednimi bajtami, zanim się wykona. Nieudane apply cofa się samo.
+- **Twoje zmiany przetrwają.** Konfiguracje JSON zachowują komentarze i kolejność kluczy. Rollback pomija to, co zmieniłeś po apply.
+- **Rice to plik.** `profile.toml` można wersjonować, porównywać i udostępniać.
+- **Prawdziwe powierzchnie pulpitu.** Okna z kanałem alfa per piksel, przepuszczające kliknięcia, na warstwie pulpitu, jako AppBar albo na wierzchu.
+- **Czysty Rust, MIT do samego dna.** Bez klauzuli atrybucji Slinta, bez runtime'u XAML, bez webview.
+
+## Co zmienia
+
+| Cel | Co się zmienia | Gdzie |
+|---|---|---|
+| Windows | Kolor akcentu, akcent Start i paska zadań, paski tytułu i ramki, tryb jasny/ciemny | Rejestr `HKCU`, potem broadcast `WM_SETTINGCHANGE` |
+| Windows Terminal | Dodaje schemat kolorów i ustawia go jako domyślny | `settings.json`, BOM i komentarze zachowane |
+| VS Code | `workbench.colorCustomizations` razem z kolorami ANSI terminala | `settings.json`, komentarze zachowane |
+| Firefox | `userChrome.css` i preferencja, która go włącza | Oznaczony blok `noren:begin` / `noren:end` |
+| Twój własny UI | Panele, widżety i nakładki zbudowane na noren | `Palette::theme()` |
+
+Eksport do czegokolwiek innego: `noren palette <#akcent> --export terminal|vscode|css|kde|firefox`.
+
+## Szybki start
+
+1. Zbuduj (zobacz [Budowanie](#budowanie)) albo `cargo install --path .`, żeby mieć `noren` w `PATH`.
+2. Podejrzyj paletę:
+   ```sh
+   noren palette '#7e9cd8'
+   ```
+3. Napisz `kanagawa.toml`:
+   ```toml
+   schema = 1
+   name = "kanagawa"
+
+   [palette]
+   accent = "#7e9cd8"
+   mode = "dark"            # dark | light
+   contrast = "standard"    # standard | high
+
+   [windows]
+   accent_on_title_bars = true
+
+   [terminal]
+   [vscode]
+   ```
+4. Zobacz, co się zmieni, i zastosuj:
+   ```sh
+   noren diff kanagawa.toml
+   noren apply kanagawa.toml
+   ```
+5. Cofnij:
+   ```sh
+   noren rollback
+   ```
+
+Tabela, której nie podasz, nie jest ruszana. Każdy cel przyjmuje `path = "..."`, żeby wskazać niestandardowy plik konfiguracji. Pełny format jest opisany w [src/rice/profile.rs](src/rice/profile.rs).
+
+## FAQ
+
+**Zepsuje mi ustawienia?** Przed zapisem noren zapisuje w `%LOCALAPPDATA%\noren\journal` każdą wartość, którą zaraz nadpisze. Jeśli któryś zapis się nie uda, wykonane już zapisy są cofane. `noren rollback` przywraca poprzednie bajty co do jednego. W teście end-to-end `settings.json` VS Code wrócił identyczny bajt w bajt po apply i rollback.
+
+**Zmieniłem coś ręcznie po apply. Co zrobi rollback?** Przywraca tylko wartości, które dalej zawierają to, co zapisał noren. Resztę wypisuje jako zachowaną. `noren rollback --force` nadpisuje je mimo to.
+
+**Potrzebuje uprawnień administratora?** Nie. Pisze tylko do `HKCU` i do plików w Twoim profilu.
+
+**Czemu nie Slint, egui, iced albo WinUI?** Licencja royalty-free Slinta wymaga atrybucji w dostarczanej aplikacji. egui i iced są zbudowane wokół jednego okna aplikacji, a okna warstwowe, przepuszczające kliknięcia, AppBar i okna na warstwie pulpitu walczą z ich pętlą zdarzeń. WinUI nie jest Rust-first i ciągnie ciężki runtime.
+
+**Linux albo macOS?** Silnik palet, logika profili i dziennika oraz cały stos UI działają i są testowane na Linuksie. Cele plikowe też tam działają. Cele rejestru i natywny host są tylko na Windows. Feature `preview` otwiera okno deweloperskie na każdym systemie.
+
+## Jak to działa
+
+### Paleta
+
+`noren::palette` buduje system kolorów z jednego akcentu, w OKLCH (percepcyjna przestrzeń Björna Ottossona):
+
+| Kroki | Rola |
+|---|---|
+| 1-2 | Tło aplikacji i subtelne tło |
+| 3-5 | Tła komponentów: normalne, hover, wciśnięte |
+| 6-8 | Ramki i separatory |
+| 9-10 | Pełne wypełnienia: przyciski, odznaki |
+| 11-12 | Tekst o niskim i wysokim kontraście |
+
+- Neutralne odcienie są zabarwione w stronę akcentu, więc szarości do niego pasują.
+- Rampy positive, warning i negative biorą jasność i chromę akcentu, więc żaden kolor statusu nie odstaje.
+- Kroki tekstu są przesuwane, aż spełnią progi APCA na tle (Lc 90 dla tekstu, Lc 100 z `contrast = "high"`). Testy sprawdzają 72 odcienie w obu trybach i na obu poziomach kontrastu.
+- Kolory spoza sRGB tracą chromę, nigdy jasność ani odcień.
+- 16 kolorów ANSI pochodzi z tych samych ramp.
+
+### Transakcje
+
+```
+profile.toml ──► changes ──► plan (pomija sloty, które już są równe)
+                                │
+                     dziennik: Pending + poprzednie bajty   (plik tmp, potem rename)
+                                │
+                     zapis każdego slotu ── błąd ──► cofnięcie zapisanych slotów
+                                │
+                     dziennik: Applied ──► WM_SETTINGCHANGE "ImmersiveColorSet"
+```
+
+Slot to wartość rejestru albo plik. Rollback porównuje każdy slot z tym, co według dziennika zapisał noren, przywraca zgodne i oznacza transakcję jako `RolledBack`. Dwukrotne apply tego samego profilu nic nie robi.
+
+### Powierzchnie
+
+```
+Surface (trait)            jedno przezroczyste okno na jednym monitorze
+├── Panel                  auto-hide top bar + popupy, hostuje Widgety
+│   └── Widget (trait)     kompaktowy widok w pasku, opcjonalny popup, wiadomości
+└── Floating<V: View>      drzewo elementów przypięte do rogu/krawędzi monitora
+                           Layer::Desktop (widżety), Normal, Top (nakładki)
+
+Element<M>                 deklaratywne drzewo: row/column/grid/text/svg/painter
+layout → Frame             layout taffy, domyślne jak w QML (bez niejawnego kurczenia)
+render                     malowanie tiny-skia, hover, przycinanie, przewijanie
+
+host::run                  Win32: okna warstwowe, UpdateLayeredWindow, AppBar,
+                           śledzenie monitorów/DPI, wykrywanie pełnego ekranu
+host::preview::run         okno winit jako wirtualny monitor (każdy system)
+host::sim::Simulator       headless pulpit: kompozycja, routing wejścia, PNG
+```
+
+Powierzchnie działają w pikselach logicznych względem swojego monitora. Hosty przeliczają na współrzędne fizyczne przez per-monitor DPI v2. Ta sama `Surface` działa pod wszystkimi trzema hostami, więc większość zachowań jest testowana na Linuksie bez wyświetlacza.
+
+## Budowanie widżetów
+
+Górny panel:
+
+```rust,ignore
+use noren::host::{self, Entry, SurfaceOptions};
+use noren::{Panel, PanelConfig, Theme};
+
+let mut panel = Panel::new(PanelConfig::default(), Theme::kanagawa_wave());
+panel.add(MyWidget::new()); // impl Widget
+host::run(vec![Entry::new(panel, SurfaceOptions::panel())])?;
+```
+
+Widżet pulpitu w prawym dolnym rogu, pod wszystkimi oknami:
+
+```rust,ignore
+use noren::surface::{Anchor, FloatingConfig, Layer};
+use noren::Floating;
+
+let config = FloatingConfig { anchor: Anchor::BottomRight, layer: Layer::Desktop, ..Default::default() };
+let clock = Floating::new(Clock::default(), config, Theme::kanagawa_wave()); // impl View
+host::run(vec![Entry::new(clock, SurfaceOptions::default())])?;
+```
+
+[examples/pulse.rs](examples/pulse.rs) to kompletny widżet przeniesiony z plazmoidu KDE `systempulse`: pierścienie CPU, RAM i GPU, temperatura i sieć, popup z kartami statystyk i sparkline'ami.
+
+```sh
+cargo run --release --example pulse                          # Windows: natywny panel
+cargo run --example pulse --features preview -- --preview     # każdy system: okno dev
+cargo run --example pulse -- --screenshot pulse.png --popup   # headless PNG
+```
+
+Obciążenie GPU pochodzi z liczników wydajności `GPU Engine`, tego samego źródła, którego używa Menedżer zadań. Temperatura pokazuje "n/a", gdy żaden czujnik nie jest dostępny w trybie użytkownika.
+
+Tekst używa rodzin czcionek z motywu i spada na czcionki systemowe. Żadne czcionki nie są dołączone. Żeby dołączyć własną, wywołaj `TextSystem::load_fonts(path)` i sprawdź jej licencję.
+
+## Wiersz poleceń
+
+```sh
+noren palette <#akcent> [--light] [--high]           # próbki w terminalu
+noren palette <#akcent> --export terminal            # też: vscode, css, kde, firefox
+noren diff <profile.toml>                            # co zmieni apply
+noren apply <profile.toml>                           # zastosuj jako jedną transakcję
+noren rollback [--force]                             # cofnij najnowszą transakcję
+noren log                                            # lista transakcji
+noren <komenda> --journal <katalog>                  # dziennik w innym miejscu
+```
+
+## Roadmapa
+
+Zrobione:
+- [x] Rice jako wersjonowany plik TOML
+- [x] Transakcyjne apply, diff i rollback
+- [x] Jedna paleta wypychana do wszystkich celów
+
+W planach:
+- [ ] Deklaratywne reguły okien: rogi, Mica, przezroczystość, kolor ramki, monitor
+- [ ] Kolor ramki okna ze stanu (build padł, git brudny) przez `noren state <nazwa> <ok|fail|warn|busy>`
+- [ ] Każdy program wypisujący JSON jest widżetem
+- [ ] Widżety przyklejone do okien innych aplikacji
+- [ ] Żywe lustra miniatur DWM
+- [ ] Przyciemnianie poza fokusem i klawisz x-ray
+- [ ] Układy per aplikacja na pierwszym planie i per pulpit wirtualny
+- [ ] Położenie widżetów i kolor tekstu dobierane z tapety
+- [ ] Motyw zależny od pory dnia i wschodu słońca
+- [ ] Poświata krawędzi ekranu jako status
+- [ ] Akordy leader-key, paleta komend, gorące rogi
+- [ ] Zamiennik Alt+Tab z żywymi miniaturami
+- [ ] Widżet multimediów z motywem z okładki
+- [ ] Przestylowane powiadomienia
+- [ ] Karta rice'a do udostępnienia jako PNG
+
+## Ograniczenia
+
+- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. Zgłoszenia mile widziane.
+- Firefox ignoruje `userChrome.css` do restartu. VS Code i Windows Terminal przeładowują się same.
+- Rollback usuwa pliki utworzone przez noren, ale zostawia pusty folder `chrome` Firefoksa.
+- Windows nie dokumentuje wartości rejestru akcentu. Aktualizacja funkcji może je zmienić.
+- Projekt niezwiązany z Microsoftem ani KDE.
+
+## Budowanie
+
+Rust 1.95+ (edycja 2024):
+
+```bash
+git clone https://github.com/KayZedd/noren.git
+cd noren
+cargo test --all-targets
+cargo build --release
+```
+
+Plik wykonywalny to `target/release/noren` (`noren.exe` na Windows).
+
+Sprawdzenia, które musi przejść każda zmiana:
+
+```sh
+cargo test --all-targets                                       # testy bramkowe, < 1 s
+cargo clippy --all-targets --features preview
+cargo clippy --target x86_64-pc-windows-msvc --all-targets     # host Win32 z Linuksa
+```
+
+Testy renderowania tekstu działają tylko z zainstalowanym Noto Sans albo DejaVu Sans. Bez nich przechodzą trywialnie.
+
+Struktura:
+
+| Ścieżka | Rola |
+|---|---|
+| [src/palette/](src/palette/) | OKLCH, APCA, rampy, eksport do Terminala, VS Code, CSS, KDE, Firefoksa, akcentu Windows |
+| [src/rice/](src/rice/) | Profile, dziennik, apply i rollback, merge JSONC, magazyn rejestru i plików |
+| [src/bin/noren.rs](src/bin/noren.rs) | Wiersz poleceń |
+| [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |
+| [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Drzewo elementów, layout, malowanie |
+| [src/host/](src/host/) | Host Win32, okno podglądu, headless symulator |
+| [src/theme.rs](src/theme.rs), [src/text.rs](src/text.rs) | Motywy i tekst |
+| [examples/pulse.rs](examples/pulse.rs) | Widżet monitora systemu |
+
+## Podziękowania
+
+- [OKLab](https://bottosson.github.io/posts/oklab/), Björn Ottosson: przestrzeń kolorów.
+- [APCA](https://github.com/Myndex/apca-w3), Andrew Somers: model kontrastu.
+- [Radix Colors](https://www.radix-ui.com/colors): role dwunastu kroków rampy.
+- [tiny-skia](https://github.com/linebender/tiny-skia), [cosmic-text](https://github.com/pop-os/cosmic-text), [taffy](https://github.com/DioxusLabs/taffy), [resvg](https://github.com/linebender/resvg), [windows-rs](https://github.com/microsoft/windows-rs), [jsonc-parser](https://github.com/dprint/jsonc-parser).
+
+## Wesprzyj projekt
+
+Jeśli dzięki noren pulpit jest wreszcie Twój, ⭐ pomaga innym go znaleźć. Zgłoszenia błędów z prawdziwych maszyn z Windowsem pomagają jeszcze bardziej.
+
+## Licencja
+
+[MIT](LICENSE). Windows jest znakiem towarowym Microsoft Corporation.
