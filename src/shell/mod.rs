@@ -2,7 +2,8 @@
 //! must be held while noren runs: window rules (`[[window]]` in a profile), named states for
 //! state-colored borders, focus dimming (`[focus]`), the x-ray hold key (`[xray]`), commands
 //! on leader-key chords and hot corners (`[[command]]`, see [`command`]), and edge glows that
-//! show a state (`[[glow]]`, see [`glow`]).
+//! show a state (`[[glow]]`, see [`glow`]), and the dark/light schedule (`[schedule]`, see
+//! [`schedule`]).
 //!
 //! Nothing here is persistent. `noren run` applies the rules to every window, follows new
 //! windows and state changes, and on exit puts every touched window back as it was.
@@ -14,6 +15,7 @@ pub mod glow;
 mod glow_win;
 pub mod keys;
 pub mod rules;
+pub mod schedule;
 pub mod state;
 #[cfg(windows)]
 mod win;
@@ -41,6 +43,10 @@ pub struct Live {
     pub xray: Option<Xray>,
     pub commands: Commands,
     pub glows: Vec<Glow>,
+    /// Switches the profile between dark and light (`[schedule]`).
+    pub schedule: Option<schedule::Tracker>,
+    /// The profile, re-applied in the scheduled mode.
+    pub profile: Profile,
     /// The profile as TOML, handed to the command palette.
     pub source: String,
 }
@@ -53,6 +59,13 @@ impl Live {
             xray: profile.xray.as_ref().map(Xray::new).transpose()?,
             commands: profile.commands()?,
             glows: glow::glows(&profile.glow)?,
+            schedule: profile
+                .schedule
+                .as_ref()
+                .map(schedule::Schedule::new)
+                .transpose()?
+                .map(schedule::Tracker::new),
+            profile: profile.clone(),
             source: toml::to_string(profile).map_err(|e| e.to_string())?,
         };
         if live.rules.is_empty()
@@ -60,9 +73,10 @@ impl Live {
             && live.xray.is_none()
             && !live.commands.bound()
             && live.glows.is_empty()
+            && live.schedule.is_none()
         {
             return Err(
-                "the profile has no [[window]] rules, [focus], [xray], chords, hot corners or [[glow]], nothing to run"
+                "the profile has no [[window]] rules, [focus], [xray], chords, hot corners, [[glow]] or [schedule], nothing to run"
                     .into(),
             );
         }
@@ -174,5 +188,19 @@ mod tests {
         assert!(live("[xray]\nkey = \"Ctrl+Win\"\n").unwrap().xray.is_some());
         assert!(live("[[window]]\ncorners = \"round\"\n").is_ok());
         assert_eq!(live("[[glow]]\nstate = \"ci\"\n").unwrap().glows.len(), 1);
+        assert!(
+            live("[schedule]\nlight = \"07:00\"\ndark = \"19:00\"\n")
+                .unwrap()
+                .schedule
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn a_bad_schedule_stops_run() {
+        let err = live("[schedule]\nlight = \"sunrise\"\ndark = \"19:00\"\n")
+            .err()
+            .unwrap();
+        assert!(err.contains("latitude"), "{err}");
     }
 }

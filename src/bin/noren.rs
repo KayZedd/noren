@@ -17,8 +17,9 @@ usage:
   noren apply <profile.toml>       apply as one transaction
   noren rollback [--force]         undo the newest transaction
   noren log                        list transactions
-  noren run <profile.toml>         hold [[window]] rules, [focus], [xray], chords and hot
-                                   corners until Ctrl+C
+  noren run <profile.toml>         hold [[window]] rules, [focus], [xray], chords, hot
+                                   corners, [[glow]] and [schedule] until Ctrl+C
+  noren schedule <profile.toml>    today's dark/light switch times from [schedule]
   noren commands <profile.toml>    list the profile's [[command]]s
   noren commands <profile.toml> <name>
                                    run one by name
@@ -159,6 +160,13 @@ fn run(args: &[String]) -> Result<(), String> {
             let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;
             let dir = option(rest, "--state-dir").map(PathBuf::from);
             shell::run(&profile, dir).map_err(|e| e.to_string())
+        }
+        "schedule" => {
+            let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;
+            let config = profile.schedule.as_ref().ok_or("the profile has no [schedule]")?;
+            let schedule = shell::schedule::Schedule::new(config)?;
+            print!("{}", schedule.report(shell::schedule::Local::now()));
+            Ok(())
         }
         "commands" => {
             let path = positional(rest).ok_or("missing profile path")?;

@@ -15,7 +15,7 @@ Framework w czystym Ruście: panele, widżety pulpitu, nakładki, palety i trans
 
 <p align="center"><img src="docs/studio.webp" alt="noren studio: strona Palette" width="860"></p>
 
-**noren studio** to miejsce, w którym rice'ujesz. Wybierasz jeden kolor akcentu i patrzysz, jak staje się pełną paletą z tekstem o sprawdzonym kontraście. Widzisz, co się zmieni w Windowsie, Windows Terminal, VS Code i Firefoksie, stosujesz to jako jedną transakcję i cofasz jednym kliknięciem. Reguły okien, przyciemnianie, x-ray, akordy, gorące rogi i poświaty krawędzi trzymasz na żywo, a studio siedzi w zasobniku. Wiersz poleceń `noren` robi to samo ze skryptów i CI.
+**noren studio** to miejsce, w którym rice'ujesz. Wybierasz jeden kolor akcentu i patrzysz, jak staje się pełną paletą z tekstem o sprawdzonym kontraście. Widzisz, co się zmieni w Windowsie, Windows Terminal, VS Code i Firefoksie, stosujesz to jako jedną transakcję i cofasz jednym kliknięciem. Reguły okien, przyciemnianie, x-ray, akordy, gorące rogi, poświaty krawędzi i harmonogram ciemny/jasny trzymasz na żywo, a studio siedzi w zasobniku. Wiersz poleceń `noren` robi to samo ze skryptów i CI.
 
 - **Paleta z jednego koloru.** Rampy OKLCH dla trybu ciemnego i jasnego, z tekstem dociąganym, aż przejdzie kontrast APCA.
 - **Bezpieczne zastosowanie i cofanie.** Każdy zapis trafia do dziennika razem z bajtami, które zastępuje. Nieudane apply cofa się samo.
@@ -31,7 +31,7 @@ Framework w czystym Ruście: panele, widżety pulpitu, nakładki, palety i trans
 | Palette | Akcent z presetami Aizome, tryb ciemny lub jasny, wysoki kontrast, rampy na żywo, kontrola APCA, podgląd |
 | Profile | Profil jako TOML, sprawdzany w trakcie pisania |
 | Apply | Diff, zastosowanie jako jedna transakcja, rollback |
-| Live | Trzymanie reguł okien, przyciemniania, x-ray, akordów, gorących rogów i poświat; opcjonalnie od startu |
+| Live | Trzymanie reguł okien, przyciemniania, x-ray, akordów, gorących rogów, poświat i harmonogramu ciemny/jasny; opcjonalnie od startu |
 | Windows | Każde okno i pasujące do niego reguły |
 | States | Nazwane stany, za którymi idą ramki i poświaty krawędzi |
 | History | Każde zastosowanie, od najnowszego |
@@ -212,6 +212,18 @@ edges = ["bottom"]
 
 Cienki pasek światła wzdłuż krawędzi ekranu pokazuje stan bez żadnego okna: zielony, gdy CI przeszło, czerwony, gdy padło, powolny oddech, gdy trwa build albo agent czeka na input. Kolory pochodzą z palety (ok positive, fail negative, warn warning, busy accent). Zmiana przechodzi płynnie, a wyczyszczony stan gaśnie. Światło jest najmocniejsze przy krawędzi, a końce się zwężają. Paski przepuszczają kliknięcia, nigdy nie biorą fokusu i chowają się na monitorze, na którym fokus ma aplikacja pełnoekranowa. Dwie poświaty nie mogą świecić na tej samej krawędzi tego samego monitora.
 
+### Ciemny i jasny według harmonogramu
+
+```toml
+[schedule]
+light = "sunrise+30m"          # "HH:MM", "sunrise" albo "sunset", opcjonalnie z +/-Nh lub +/-Nm
+dark = "21:00"
+latitude = 52.23               # wymagane, gdy któraś godzina zależy od słońca
+longitude = 21.01              # wschód na plusie
+```
+
+Gdy `noren run` albo karta Live w studiu trzyma profil, przełącza `[palette] mode` o tych godzinach. Żywe okna od razu dostają nową paletę, a statyczne cele profilu (Windows, Terminal, VS Code, Firefox) są stosowane ponownie jako jedna transakcja w dzienniku, więc `noren rollback` cofa kolejne przełączenia. Godziny słońca liczy równanie wschodu NOAA, z dokładnością do kilku minut. Tam, gdzie słońce danego dnia nie wschodzi albo nie zachodzi, cały dzień zostaje ciemny albo jasny. `noren schedule <profile.toml>` wypisuje dzisiejsze godziny.
+
 ## FAQ
 
 **Zepsuje mi ustawienia?** Przed zapisem noren zapisuje w `%LOCALAPPDATA%\noren\journal` każdą wartość, którą zaraz nadpisze. Jeśli któryś zapis się nie uda, wykonane już zapisy są cofane. `noren rollback` przywraca poprzednie bajty co do jednego. W teście end-to-end `settings.json` VS Code wrócił identyczny bajt w bajt po apply i rollback.
@@ -326,7 +338,8 @@ noren diff <profile.toml>                            # co zmieni apply
 noren apply <profile.toml>                           # zastosuj jako jedną transakcję
 noren rollback [--force]                             # cofnij najnowszą transakcję
 noren log                                            # lista transakcji
-noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty do Ctrl+C
+noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule] do Ctrl+C
+noren schedule <profile.toml>                        # dzisiejsze godziny przełączenia ciemny/jasny
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
 noren commands <profile.toml> [<nazwa>]              # lista [[command]] albo uruchom jedną
@@ -351,7 +364,7 @@ W planach:
 - [ ] Żywe lustra miniatur DWM
 - [ ] Układy per aplikacja na pierwszym planie i per pulpit wirtualny
 - [ ] Położenie widżetów i kolor tekstu dobierane z tapety
-- [ ] Motyw zależny od pory dnia i wschodu słońca
+- [x] Motyw zależny od pory dnia i wschodu słońca
 - [x] Poświata krawędzi ekranu jako status
 - [x] Akordy leader-key, paleta komend, gorące rogi
 - [ ] Zamiennik Alt+Tab z żywymi miniaturami
@@ -361,7 +374,7 @@ W planach:
 
 ## Ograniczenia
 
-- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety i poświat krawędzi. Zgłoszenia mile widziane.
+- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi i przełączania według harmonogramu. Zgłoszenia mile widziane.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
 - Poświaty to okna topmost, ale pasek zadań i tak może rysować się nad poświatą na swojej krawędzi.
@@ -401,7 +414,7 @@ Struktura:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, rampy, eksport do Terminala, VS Code, CSS, KDE, Firefoksa, akcentu Windows |
 | [src/rice/](src/rice/) | Profile, dziennik, apply i rollback, merge JSONC, magazyn rejestru i plików |
-| [src/shell/](src/shell/) | Reguły okien, stany, przyciemnianie, x-ray, komendy (akordy, gorące rogi), poświaty krawędzi i runtime Win32, który je trzyma |
+| [src/shell/](src/shell/) | Reguły okien, stany, przyciemnianie, x-ray, komendy (akordy, gorące rogi), poświaty krawędzi, harmonogram ciemny/jasny i runtime Win32, który je trzyma |
 | [src/bin/noren.rs](src/bin/noren.rs) | Wiersz poleceń |
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: aplikacja egui, szklany motyw, zasobnik, paleta komend |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |

@@ -15,7 +15,7 @@ English | [Polski](README.pl.md)
 
 <p align="center"><img src="docs/studio.webp" alt="noren studio: the Palette page" width="860"></p>
 
-**noren studio** is where you rice. Pick one accent color and watch it become a full palette with contrast-checked text. See what will change in Windows, Windows Terminal, VS Code and Firefox, apply it as one transaction, and roll it back with one click. Hold window rules, focus dimming, x-ray, chords, hot corners and edge glows live while the studio sits in the tray. The `noren` command line does the same from scripts and CI.
+**noren studio** is where you rice. Pick one accent color and watch it become a full palette with contrast-checked text. See what will change in Windows, Windows Terminal, VS Code and Firefox, apply it as one transaction, and roll it back with one click. Hold window rules, focus dimming, x-ray, chords, hot corners, edge glows and a dark/light schedule live while the studio sits in the tray. The `noren` command line does the same from scripts and CI.
 
 - **A palette from one color.** OKLCH ramps for dark and light mode, with text pushed until it passes APCA contrast.
 - **Apply and undo safely.** Every write is journaled with the bytes it replaces. A failed apply reverts itself.
@@ -31,7 +31,7 @@ English | [Polski](README.pl.md)
 | Palette | Accent with Aizome presets, dark or light, high contrast, live ramps, APCA checks, a preview |
 | Profile | The profile as TOML, checked as you type |
 | Apply | The diff, apply as one transaction, roll back |
-| Live | Hold window rules, focus dimming, x-ray, chords, hot corners and edge glows; optionally on start |
+| Live | Hold window rules, focus dimming, x-ray, chords, hot corners, edge glows and the dark/light schedule; optionally on start |
 | Windows | Every window, and which rules match it |
 | States | Set the named states that borders and edge glows follow |
 | History | Every apply, newest first |
@@ -212,6 +212,18 @@ edges = ["bottom"]
 
 A thin band of light along a screen edge shows a state without a window: green when CI passed, red when it failed, a slow breath while a build runs or an agent waits for input. Colors come from the palette (ok positive, fail negative, warn warning, busy accent). A change crossfades and a cleared state fades out. Light is strongest at the edge and the ends taper. Bands are click-through, never take focus, and step aside on a monitor where a fullscreen app has the focus. Two glows may not light the same edge of the same monitor.
 
+### Dark and light on a schedule
+
+```toml
+[schedule]
+light = "sunrise+30m"          # "HH:MM", "sunrise" or "sunset", with an optional +/-Nh or +/-Nm
+dark = "21:00"
+latitude = 52.23               # needed when a time follows the sun
+longitude = 21.01              # east is positive
+```
+
+While `noren run` or the studio's Live card holds the profile, it switches `[palette] mode` at those times. Live windows take the new palette at once, and the profile's static targets (Windows, Terminal, VS Code, Firefox) are applied again as one journaled transaction, so `noren rollback` steps back through the switches. Sun times use the NOAA sunrise equation and land within a few minutes. Where the sun never rises or never sets that day, the whole day stays dark or light. `noren schedule <profile.toml>` prints today's times.
+
 ## FAQ
 
 **Will it break my settings?** Before writing, noren journals every value it is about to replace in `%LOCALAPPDATA%\noren\journal`. If any write fails, the ones already done are reverted. `noren rollback` restores the previous bytes exactly. In an end-to-end run, a VS Code `settings.json` came back byte-identical after apply and rollback.
@@ -326,7 +338,8 @@ noren diff <profile.toml>                            # what apply would change
 noren apply <profile.toml>                           # apply as one transaction
 noren rollback [--force]                             # undo the newest transaction
 noren log                                            # list transactions
-noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows until Ctrl+C
+noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule] until Ctrl+C
+noren schedule <profile.toml>                        # today's dark/light switch times
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
 noren commands <profile.toml> [<name>]               # list [[command]]s, or run one
@@ -351,7 +364,7 @@ Planned:
 - [ ] Live DWM thumbnail mirrors
 - [ ] Layouts per foreground app and virtual desktop
 - [ ] Widget placement and text color picked from the wallpaper
-- [ ] Theme by time of day and sunrise
+- [x] Theme by time of day and sunrise
 - [x] Ambient edge glow for status
 - [x] Leader-key chords, command palette, hot corners
 - [ ] Alt+Tab replacement with live thumbnails
@@ -361,7 +374,7 @@ Planned:
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window and edge glows. Reports are welcome.
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows and the schedule switch. Reports are welcome.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
 - Edge glows are topmost windows, but the taskbar can still draw over a glow on its edge.
@@ -401,7 +414,7 @@ Layout:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, ramps, exports for Terminal, VS Code, CSS, KDE, Firefox, Windows accent |
 | [src/rice/](src/rice/) | Profiles, journal, apply and rollback, JSONC merge, registry and file store |
-| [src/shell/](src/shell/) | Window rules, states, focus dimming, x-ray, commands (chords, hot corners), edge glows, and the Win32 runtime that holds them |
+| [src/shell/](src/shell/) | Window rules, states, focus dimming, x-ray, commands (chords, hot corners), edge glows, the dark/light schedule, and the Win32 runtime that holds them |
 | [src/bin/noren.rs](src/bin/noren.rs) | Command line |
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: egui app, glass theme, tray, command palette |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |

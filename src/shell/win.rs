@@ -56,8 +56,10 @@ use super::glow::Glows;
 use super::glow_win::{Layers, Screen};
 use super::keys::Hold;
 use super::rules::{Op, Rules, ScreenRect, Style, WindowInfo, monitor_order, ops, relocate};
+use super::schedule::{Local, Tracker};
 use super::state::{self, State};
-use crate::palette::Palette;
+use crate::palette::{Mode, Palette};
+use crate::rice::{self, Journal, Profile, SystemStore};
 
 const DWMWA_USE_IMMERSIVE_DARK_MODE: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(20);
 const DWMWA_WINDOW_CORNER_PREFERENCE: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(33);
@@ -65,6 +67,17 @@ const DWMWA_BORDER_COLOR: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(34);
 const DWMWA_CAPTION_COLOR: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(35);
 const DWMWA_TEXT_COLOR: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(36);
 const DWMWA_SYSTEMBACKDROP_TYPE: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(38);
+
+/// Applies `profile` to the system and journals it in the default journal; returns how many
+/// values changed.
+fn reapply(profile: &Profile) -> Result<usize, String> {
+    let dir = Journal::default_dir().ok_or("no journal directory")?;
+    let journal = Journal::open(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut store = SystemStore::default();
+    let changes = profile.changes(&store).map_err(|e| e.to_string())?;
+    let done = rice::apply(&mut store, &journal, &profile.name, &changes).map_err(|e| e.to_string())?;
+    Ok(done.map_or(0, |t| t.entries.len()))
+}
 
 /// Shell surfaces noren must never restyle or move.
 const SKIP_CLASSES: [&str; 4] = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
@@ -124,6 +137,8 @@ struct Runtime {
     layers: Option<Layers>,
     /// The glow frame timer, `0` while no glow moves.
     frame: usize,
+    /// The dark/light schedule and the profile it re-applies.
+    schedule: Option<(Tracker, Profile)>,
 }
 
 fn win_event_hook(event: u32) -> HWINEVENTHOOK {
@@ -163,6 +178,8 @@ pub fn hold(
         xray,
         commands,
         glows,
+        schedule,
+        profile,
         source,
     } = live;
     // SAFETY: plain Win32 calls; the hook and handler only touch thread-safe statics or the
@@ -235,12 +252,14 @@ pub fn hold(
             glows: Glows::new(glows, Instant::now()),
             layers,
             frame: 0,
+            schedule: schedule.map(|t| (t, profile)),
         };
         if watch_states {
             rt.states = rt.read_states();
         }
         rt.glows.update(&rt.states, Instant::now());
-        let slow = if watch_states || rt.xray.is_some() || chording {
+        rt.follow_schedule();
+        let slow = if watch_states || rt.xray.is_some() || chording || rt.schedule.is_some() {
             SetTimer(None, 0, STATE_POLL_MS, None)
         } else {
             0
@@ -287,6 +306,7 @@ pub fn hold(
                             rt.refresh_all();
                         }
                     }
+                    rt.follow_schedule();
                     // Also catches monitors that came, went or changed resolution.
                     rt.draw_glows();
                     // A key-up the hook never saw must not leave every window see-through.
@@ -626,6 +646,29 @@ impl Runtime {
         }
     }
 
+    /// Switches to the scheduled mode when it changes: live windows take the new palette, and
+    /// the profile's files and registry values are applied again (journaled, so
+    /// `noren rollback` steps back through the switches).
+    fn follow_schedule(&mut self) {
+        let Some((tracker, profile)) = self.schedule.as_mut() else {
+            return;
+        };
+        let Some(mode) = tracker.due(Local::now()) else {
+            return;
+        };
+        let mut profile = profile.clone();
+        profile.palette.mode = mode;
+        self.palette = profile.palette();
+        self.refresh_all();
+        self.draw_glows();
+        let name = if mode == Mode::Light { "light" } else { "dark" };
+        match reapply(&profile) {
+            Ok(0) => eprintln!("noren: schedule: {name}"),
+            Ok(n) => eprintln!("noren: schedule: {name}, {n} changes applied"),
+            Err(e) => eprintln!("noren: schedule: {name}, applying the profile failed: {e}"),
+        }
+    }
+
     fn forget(&mut self, hwnd: isize) {
         self.applied.remove(&hwnd);
         self.exe.remove(&hwnd);
@@ -928,6 +971,7 @@ pub fn list() -> Vec<WindowInfo> {
         glows: Glows::new(Vec::new(), Instant::now()),
         layers: None,
         frame: 0,
+        schedule: None,
     };
     top_level_windows()
         .into_iter()

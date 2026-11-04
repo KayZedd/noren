@@ -43,6 +43,12 @@
 //! [[glow]]                 # light a screen edge from a state (see `shell::glow`)
 //! state = "ci"
 //! edges = ["top"]
+//!
+//! [schedule]               # dark/light by the clock or the sun (see `shell::schedule`)
+//! light = "sunrise"
+//! dark = "21:00"
+//! latitude = 52.23
+//! longitude = 21.01
 //! ```
 //!
 //! Every target accepts `path = "..."` to point at a non-default config file.
@@ -59,6 +65,7 @@ use crate::palette::{Palette, PaletteSpec, export};
 use crate::shell::command::{ChordsConfig, CommandConfig, Commands, CornersConfig};
 use crate::shell::focus::{Focus, FocusConfig, Xray, XrayConfig};
 use crate::shell::glow::{self, GlowConfig};
+use crate::shell::schedule::ScheduleConfig;
 use crate::shell::{Rules, WindowRule};
 
 /// Profile format version this build reads.
@@ -91,6 +98,8 @@ pub struct Profile {
     /// Screen edges lit by a state (see [`crate::shell::glow`]).
     #[serde(default)]
     pub glow: Vec<GlowConfig>,
+    /// Dark and light by the clock or the sun, held by `noren run`.
+    pub schedule: Option<ScheduleConfig>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

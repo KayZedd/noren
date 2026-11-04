@@ -46,6 +46,12 @@ border = "accent.7"
 # [[glow]]               # light the top edge from `noren state ci ok|fail|warn|busy`
 # state = "ci"
 # edges = ["top"]
+
+# [schedule]             # light from sunrise, dark from 21:00 while Live holds the profile
+# light = "sunrise"
+# dark = "21:00"
+# latitude = 52.23
+# longitude = 21.01
 "##;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
