@@ -29,6 +29,18 @@ pub use profile::{Profile, SCHEMA};
 use serde::{Deserialize, Serialize};
 pub use store::{MemStore, Store, SystemStore};
 
+/// Per-user noren data: `%LOCALAPPDATA%\noren` on Windows, `$XDG_STATE_HOME/noren` (or
+/// `~/.local/state/noren`) elsewhere.
+pub fn data_dir() -> Option<PathBuf> {
+    let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+    let base = if cfg!(windows) {
+        env("LOCALAPPDATA")?
+    } else {
+        env("XDG_STATE_HOME").or_else(|| env("HOME").map(|h| h.join(".local/state")))?
+    };
+    Some(base.join("noren"))
+}
+
 /// One place on the system that holds bytes.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -149,13 +161,7 @@ impl Journal {
     /// `%LOCALAPPDATA%\noren\journal` on Windows, `$XDG_STATE_HOME/noren/journal` (or
     /// `~/.local/state/noren/journal`) elsewhere.
     pub fn default_dir() -> Option<PathBuf> {
-        let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
-        let base = if cfg!(windows) {
-            env("LOCALAPPDATA")?
-        } else {
-            env("XDG_STATE_HOME").or_else(|| env("HOME").map(|h| h.join(".local/state")))?
-        };
-        Some(base.join("noren").join("journal"))
+        Some(data_dir()?.join("journal"))
     }
 
     fn path(&self, id: u64) -> PathBuf {

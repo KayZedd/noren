@@ -6,6 +6,7 @@ use std::process::ExitCode;
 use noren::Color;
 use noren::palette::{Contrast, Mode, Palette, PaletteSpec, export};
 use noren::rice::{self, Journal, Profile, SystemStore, describe};
+use noren::shell::{self, Rules, State, state};
 
 const USAGE: &str = "\
 noren: Windows ricing, transactional
@@ -16,9 +17,15 @@ usage:
   noren apply <profile.toml>       apply as one transaction
   noren rollback [--force]         undo the newest transaction
   noren log                        list transactions
+  noren run <profile.toml>         hold the profile's [[window]] rules until Ctrl+C
+  noren windows [<profile.toml>]   list windows, and which rules match them
+  noren state                      list states
+  noren state <name> <ok|fail|warn|busy|clear>
+                                   set a state read by border = state:<name>
 
 options:
   --journal <dir>                  journal location (default: %LOCALAPPDATA%\\noren\\journal)
+  --state-dir <dir>                state location (default: %LOCALAPPDATA%\\noren\\state)
 ";
 
 fn main() -> ExitCode {
@@ -43,18 +50,31 @@ fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
         .map(String::as_str)
 }
 
-fn positional(args: &[String]) -> Option<&str> {
+/// Arguments that are not flags or option values.
+fn positionals(args: &[String]) -> Vec<&str> {
+    let mut out = Vec::new();
     let mut skip = false;
     for a in args {
         if skip {
             skip = false;
-        } else if a == "--journal" || a == "--export" {
+        } else if matches!(a.as_str(), "--journal" | "--export" | "--state-dir") {
             skip = true;
         } else if !a.starts_with("--") {
-            return Some(a);
+            out.push(a.as_str());
         }
     }
-    None
+    out
+}
+
+fn positional(args: &[String]) -> Option<&str> {
+    positionals(args).first().copied()
+}
+
+fn state_dir(args: &[String]) -> Result<PathBuf, String> {
+    match option(args, "--state-dir") {
+        Some(d) => Ok(PathBuf::from(d)),
+        None => state::default_dir().ok_or_else(|| "cannot find a state directory, pass --state-dir".into()),
+    }
 }
 
 fn journal(args: &[String]) -> Result<Journal, String> {
@@ -130,6 +150,50 @@ fn run(args: &[String]) -> Result<(), String> {
                 );
             }
             Ok(())
+        }
+        "run" => {
+            let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;
+            let dir = option(rest, "--state-dir").map(PathBuf::from);
+            shell::run(&profile, dir).map_err(|e| e.to_string())
+        }
+        "windows" => {
+            let rules = match positional(rest) {
+                Some(path) => Some(Rules::new(&Profile::load(path.as_ref())?.window)?),
+                None => None,
+            };
+            for w in shell::windows().map_err(|e| e.to_string())? {
+                let matched = rules
+                    .as_ref()
+                    .map(|r| {
+                        let ids: Vec<String> = r.matching(&w).iter().map(|i| format!("#{}", i + 1)).collect();
+                        format!(
+                            "  rules {}",
+                            if ids.is_empty() { "-".into() } else { ids.join(",") }
+                        )
+                    })
+                    .unwrap_or_default();
+                println!("{:<28} {:<36} {}{matched}", w.exe, w.class, w.title);
+            }
+            Ok(())
+        }
+        "state" => {
+            let dir = state_dir(rest)?;
+            match positionals(rest)[..] {
+                [] => {
+                    for (name, s) in state::read_all(&dir).map_err(|e| e.to_string())? {
+                        println!("{name:<24} {s}");
+                    }
+                    Ok(())
+                }
+                [name, value] => {
+                    let value = match value {
+                        "clear" => None,
+                        v => Some(v.parse::<State>()?),
+                    };
+                    state::set(&dir, name, value).map_err(|e| e.to_string())
+                }
+                _ => Err("usage: noren state [<name> <ok|fail|warn|busy|clear>]".into()),
+            }
         }
         "help" | "--help" | "-h" => {
             print!("{USAGE}");

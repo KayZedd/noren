@@ -30,6 +30,7 @@ Pick one accent color. noren builds a full palette from it and pushes it to Wind
 | Windows Terminal | Adds a color scheme and makes it the default | `settings.json`, BOM and comments kept |
 | VS Code | `workbench.colorCustomizations`, including the terminal ANSI colors | `settings.json`, comments kept |
 | Firefox | `userChrome.css`, plus the pref that enables it | A marked `noren:begin` / `noren:end` block |
+| Any window | Corners, Mica/acrylic backdrop, border, caption and title colors, dark frame, opacity, monitor | Live DWM attributes, held by `noren run` |
 | Your own UI | Panels, widgets and overlays built with noren | `Palette::theme()` |
 
 Exports for anything else: `noren palette <#accent> --export terminal|vscode|css|kde|firefox`.
@@ -69,13 +70,50 @@ Exports for anything else: `noren palette <#accent> --export terminal|vscode|css
 
 A table you leave out is never touched. Every target takes `path = "..."` to point at a non-default config file. The full format is documented in [src/rice/profile.rs](src/rice/profile.rs).
 
+## Window rules
+
+`[[window]]` tables in the same profile restyle other apps' windows while `noren run` is running. Ctrl+C puts every window back as it was.
+
+```toml
+[[window]]                     # no match fields: every window
+corners = "round"              # default | square | round | round_small
+
+[[window]]
+exe = "WindowsTerminal.exe"    # globs, case-insensitive: exe, class, title
+backdrop = "acrylic"           # auto | none | mica | acrylic | tabbed
+border = "state:build"         # follows `noren state build ...`
+
+[[window]]
+title = "*Visual Studio Code"
+border = "accent"              # accent | neutral | positive | warning | negative, ".N" picks a step
+caption = "neutral.2"
+title_text = "#dcd7ba"         # also: default, none
+dark = true
+opacity = 0.95                 # 0.1 to 1.0
+monitor = 2                    # 1 = primary, then left to right; moved once, when it appears
+```
+
+Later rules override earlier ones field by field. `noren windows kanagawa.toml` lists every window with its exe, class and title, and which rules match it.
+
+### State-colored borders
+
+A state is a name with a value: `ok`, `fail`, `warn` or `busy`. Any script can set one:
+
+```sh
+cargo build && noren state build ok || noren state build fail
+noren state build clear
+noren state                    # list
+```
+
+Windows with `border = "state:build"` turn green, red, amber or accent within half a second, in the palette's status colors. A cleared state gives the border back to the system. States are plain files in `%LOCALAPPDATA%\noren\state`, so a git hook can write one without noren on its `PATH`.
+
 ## FAQ
 
 **Will it break my settings?** Before writing, noren journals every value it is about to replace in `%LOCALAPPDATA%\noren\journal`. If any write fails, the ones already done are reverted. `noren rollback` restores the previous bytes exactly. In an end-to-end run, a VS Code `settings.json` came back byte-identical after apply and rollback.
 
 **I changed something by hand after applying. What does rollback do?** It restores only the values that still hold what noren wrote. Everything else is listed as kept. `noren rollback --force` overwrites them anyway.
 
-**Does it need admin rights?** No. It writes only to `HKCU` and to files in your profile.
+**Does it need admin rights?** No. It writes only to `HKCU` and to files in your profile. Windows running as administrator are the exception: Windows does not let a normal process restyle them, so `noren run` skips them unless it runs elevated too.
 
 **Why not Slint, egui, iced or WinUI?** Slint's royalty-free license requires attribution in the shipped app. egui and iced are built around a single application window, and layered, click-through, AppBar and desktop-layer windows fight their event loop. WinUI is not Rust-first and brings a heavy runtime.
 
@@ -181,7 +219,11 @@ noren diff <profile.toml>                            # what apply would change
 noren apply <profile.toml>                           # apply as one transaction
 noren rollback [--force]                             # undo the newest transaction
 noren log                                            # list transactions
+noren run <profile.toml>                             # hold the [[window]] rules until Ctrl+C
+noren windows [<profile.toml>]                       # windows, and which rules match
+noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
 noren <command> --journal <dir>                      # journal somewhere else
+noren <command> --state-dir <dir>                    # states somewhere else
 ```
 
 ## Roadmap
@@ -190,10 +232,10 @@ Done:
 - [x] Rice as a versioned TOML file
 - [x] Transactional apply, diff and rollback
 - [x] One palette pushed to every target
+- [x] Declarative window rules: corners, Mica, opacity, border color, monitor
+- [x] Window border color from state (build failed, git dirty) via `noren state <name> <ok|fail|warn|busy>`
 
 Planned:
-- [ ] Declarative window rules: corners, Mica, opacity, border color, monitor
-- [ ] Window border color from state (build failed, git dirty) via `noren state <name> <ok|fail|warn|busy>`
 - [ ] Any program printing JSON is a widget
 - [ ] Widgets glued to other apps' windows
 - [ ] Live DWM thumbnail mirrors
@@ -211,6 +253,8 @@ Planned:
 ## Limitations
 
 - **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. Reports are welcome.
+- Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
+- `noren run` must keep running for window rules to hold. If it is killed without Ctrl+C, the windows keep their style until they close.
 - Firefox ignores `userChrome.css` until it restarts. VS Code and Windows Terminal reload on their own.
 - Rollback removes the files noren created but leaves an empty Firefox `chrome` folder behind.
 - Windows does not document the accent registry values. A feature update could change them.
@@ -245,6 +289,7 @@ Layout:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, ramps, exports for Terminal, VS Code, CSS, KDE, Firefox, Windows accent |
 | [src/rice/](src/rice/) | Profiles, journal, apply and rollback, JSONC merge, registry and file store |
+| [src/shell/](src/shell/) | Window rules, states, and the Win32 runtime that holds them |
 | [src/bin/noren.rs](src/bin/noren.rs) | Command line |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Element tree, layout, painting |

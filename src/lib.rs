@@ -21,6 +21,7 @@ pub mod panel;
 pub mod render;
 pub mod rice;
 pub mod sampler;
+pub mod shell;
 pub mod surface;
 pub mod text;
 pub mod theme;

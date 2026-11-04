@@ -20,6 +20,11 @@
 //!
 //! [firefox]                # userChrome.css + the pref that enables it
 //! profile = 'C:\Users\me\AppData\Roaming\Mozilla\Firefox\Profiles\abcd.default-release'
+//!
+//! [[window]]               # live rules, held by `noren run` (see `shell::rules`)
+//! exe = "WindowsTerminal.exe"
+//! backdrop = "acrylic"
+//! border = "state:build"
 //! ```
 //!
 //! Every target accepts `path = "..."` to point at a non-default config file.
@@ -33,6 +38,7 @@ use serde_json::{Value, json};
 use super::merge::{JsonEdit, merge_jsonc, replace_block};
 use super::{Change, Slot, Store};
 use crate::palette::{Palette, PaletteSpec, export};
+use crate::shell::{Rules, WindowRule};
 
 /// Profile format version this build reads.
 pub const SCHEMA: u32 = 1;
@@ -47,6 +53,9 @@ pub struct Profile {
     pub terminal: Option<TerminalTarget>,
     pub vscode: Option<FileTarget>,
     pub firefox: Option<FirefoxTarget>,
+    /// Live window rules, held by `noren run` (see [`crate::shell::rules`]).
+    #[serde(default)]
+    pub window: Vec<WindowRule>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -114,6 +123,7 @@ impl Profile {
                 profile.schema
             ));
         }
+        Rules::new(&profile.window)?;
         Ok(profile)
     }
 
@@ -333,6 +343,22 @@ profile = "ff"
         assert!(Profile::parse(&format!("schema = 1\ntypo = 1\n{base}")).is_err());
         let bad = Profile::parse("schema = 1\nname = \"x\"\n[palette]\naccent = \"red\"\n");
         assert!(bad.unwrap_err().contains("#rrggbb"));
+    }
+
+    #[test]
+    fn window_rules_parse_and_are_validated_with_the_profile() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n";
+        let p = Profile::parse(&format!(
+            "{base}[[window]]\nexe = \"Code.exe\"\nborder = \"state:build\"\n[[window]]\ncorners = \"square\"\n"
+        ))
+        .unwrap();
+        assert_eq!(p.window.len(), 2);
+        assert!(
+            p.changes(&MemStore::default()).unwrap().is_empty(),
+            "window rules are live, never written by apply"
+        );
+        let bad = Profile::parse(&format!("{base}[[window]]\nopacity = 0.0\n")).unwrap_err();
+        assert!(bad.contains("opacity"), "{bad}");
     }
 
     #[test]

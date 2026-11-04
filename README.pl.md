@@ -30,6 +30,7 @@ Wybierasz jeden kolor akcentu. noren buduje z niego pełną paletę i wypycha j�
 | Windows Terminal | Dodaje schemat kolorów i ustawia go jako domyślny | `settings.json`, BOM i komentarze zachowane |
 | VS Code | `workbench.colorCustomizations` razem z kolorami ANSI terminala | `settings.json`, komentarze zachowane |
 | Firefox | `userChrome.css` i preferencja, która go włącza | Oznaczony blok `noren:begin` / `noren:end` |
+| Dowolne okno | Rogi, tło Mica/acrylic, ramka, kolory paska tytułu i tekstu, ciemna ramka, przezroczystość, monitor | Atrybuty DWM na żywo, trzymane przez `noren run` |
 | Twój własny UI | Panele, widżety i nakładki zbudowane na noren | `Palette::theme()` |
 
 Eksport do czegokolwiek innego: `noren palette <#akcent> --export terminal|vscode|css|kde|firefox`.
@@ -69,13 +70,50 @@ Eksport do czegokolwiek innego: `noren palette <#akcent> --export terminal|vscod
 
 Tabela, której nie podasz, nie jest ruszana. Każdy cel przyjmuje `path = "..."`, żeby wskazać niestandardowy plik konfiguracji. Pełny format jest opisany w [src/rice/profile.rs](src/rice/profile.rs).
 
+## Reguły okien
+
+Tabele `[[window]]` w tym samym profilu przestylowują okna innych aplikacji, dopóki działa `noren run`. Ctrl+C przywraca każde okno do stanu sprzed.
+
+```toml
+[[window]]                     # bez pól dopasowania: każde okno
+corners = "round"              # default | square | round | round_small
+
+[[window]]
+exe = "WindowsTerminal.exe"    # globy, bez wielkości liter: exe, class, title
+backdrop = "acrylic"           # auto | none | mica | acrylic | tabbed
+border = "state:build"         # podąża za `noren state build ...`
+
+[[window]]
+title = "*Visual Studio Code"
+border = "accent"              # accent | neutral | positive | warning | negative, ".N" wybiera krok
+caption = "neutral.2"
+title_text = "#dcd7ba"         # też: default, none
+dark = true
+opacity = 0.95                 # od 0.1 do 1.0
+monitor = 2                    # 1 = główny, potem od lewej; przenoszone raz, gdy okno się pojawi
+```
+
+Późniejsze reguły nadpisują wcześniejsze pole po polu. `noren windows kanagawa.toml` wypisuje każde okno z exe, klasą i tytułem oraz które reguły do niego pasują.
+
+### Ramki w kolorze stanu
+
+Stan to nazwa z wartością: `ok`, `fail`, `warn` albo `busy`. Każdy skrypt może go ustawić:
+
+```sh
+cargo build && noren state build ok || noren state build fail
+noren state build clear
+noren state                    # lista
+```
+
+Okna z `border = "state:build"` w ciągu pół sekundy robią się zielone, czerwone, bursztynowe albo w kolorze akcentu, kolorami statusu z palety. Wyczyszczony stan oddaje ramkę systemowi. Stany to zwykłe pliki w `%LOCALAPPDATA%\noren\state`, więc hook gita może zapisać stan bez noren w `PATH`.
+
 ## FAQ
 
 **Zepsuje mi ustawienia?** Przed zapisem noren zapisuje w `%LOCALAPPDATA%\noren\journal` każdą wartość, którą zaraz nadpisze. Jeśli któryś zapis się nie uda, wykonane już zapisy są cofane. `noren rollback` przywraca poprzednie bajty co do jednego. W teście end-to-end `settings.json` VS Code wrócił identyczny bajt w bajt po apply i rollback.
 
 **Zmieniłem coś ręcznie po apply. Co zrobi rollback?** Przywraca tylko wartości, które dalej zawierają to, co zapisał noren. Resztę wypisuje jako zachowaną. `noren rollback --force` nadpisuje je mimo to.
 
-**Potrzebuje uprawnień administratora?** Nie. Pisze tylko do `HKCU` i do plików w Twoim profilu.
+**Potrzebuje uprawnień administratora?** Nie. Pisze tylko do `HKCU` i do plików w Twoim profilu. Wyjątek to okna uruchomione jako administrator: Windows nie pozwala zwykłemu procesowi ich przestylować, więc `noren run` je pomija, chyba że też działa z podniesionymi uprawnieniami.
 
 **Czemu nie Slint, egui, iced albo WinUI?** Licencja royalty-free Slinta wymaga atrybucji w dostarczanej aplikacji. egui i iced są zbudowane wokół jednego okna aplikacji, a okna warstwowe, przepuszczające kliknięcia, AppBar i okna na warstwie pulpitu walczą z ich pętlą zdarzeń. WinUI nie jest Rust-first i ciągnie ciężki runtime.
 
@@ -181,7 +219,11 @@ noren diff <profile.toml>                            # co zmieni apply
 noren apply <profile.toml>                           # zastosuj jako jedną transakcję
 noren rollback [--force]                             # cofnij najnowszą transakcję
 noren log                                            # lista transakcji
+noren run <profile.toml>                             # trzymaj reguły [[window]] do Ctrl+C
+noren windows [<profile.toml>]                       # okna i pasujące reguły
+noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
 noren <komenda> --journal <katalog>                  # dziennik w innym miejscu
+noren <komenda> --state-dir <katalog>                # stany w innym miejscu
 ```
 
 ## Roadmapa
@@ -190,10 +232,10 @@ Zrobione:
 - [x] Rice jako wersjonowany plik TOML
 - [x] Transakcyjne apply, diff i rollback
 - [x] Jedna paleta wypychana do wszystkich celów
+- [x] Deklaratywne reguły okien: rogi, Mica, przezroczystość, kolor ramki, monitor
+- [x] Kolor ramki okna ze stanu (build padł, git brudny) przez `noren state <nazwa> <ok|fail|warn|busy>`
 
 W planach:
-- [ ] Deklaratywne reguły okien: rogi, Mica, przezroczystość, kolor ramki, monitor
-- [ ] Kolor ramki okna ze stanu (build padł, git brudny) przez `noren state <nazwa> <ok|fail|warn|busy>`
 - [ ] Każdy program wypisujący JSON jest widżetem
 - [ ] Widżety przyklejone do okien innych aplikacji
 - [ ] Żywe lustra miniatur DWM
@@ -211,6 +253,8 @@ W planach:
 ## Ograniczenia
 
 - **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. Zgłoszenia mile widziane.
+- Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
+- `noren run` musi działać, żeby reguły okien się trzymały. Zabity bez Ctrl+C zostawia okna w swoim stylu, dopóki się nie zamkną.
 - Firefox ignoruje `userChrome.css` do restartu. VS Code i Windows Terminal przeładowują się same.
 - Rollback usuwa pliki utworzone przez noren, ale zostawia pusty folder `chrome` Firefoksa.
 - Windows nie dokumentuje wartości rejestru akcentu. Aktualizacja funkcji może je zmienić.
@@ -245,6 +289,7 @@ Struktura:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, rampy, eksport do Terminala, VS Code, CSS, KDE, Firefoksa, akcentu Windows |
 | [src/rice/](src/rice/) | Profile, dziennik, apply i rollback, merge JSONC, magazyn rejestru i plików |
+| [src/shell/](src/shell/) | Reguły okien, stany i runtime Win32, który je trzyma |
 | [src/bin/noren.rs](src/bin/noren.rs) | Wiersz poleceń |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Drzewo elementów, layout, malowanie |
