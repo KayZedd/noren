@@ -42,6 +42,10 @@ border = "accent.7"
 
 # [xray]
 # key = "Ctrl+Alt+Space"
+
+# [[glow]]               # light the top edge from `noren state ci ok|fail|warn|busy`
+# state = "ci"
+# edges = ["top"]
 "##;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -242,16 +246,16 @@ impl Page {
                 "Zobacz co się zmieni, zastosuj jako jedną transakcję, cofnij.",
             ),
             Page::Live => l.pick(
-                "Window rules, focus dimming and x-ray, held while the studio runs.",
-                "Reguły okien, przyciemnianie i x-ray, trzymane póki działa studio.",
+                "Window rules, focus dimming, x-ray, chords, hot corners and edge glows, held while the studio runs.",
+                "Reguły okien, przyciemnianie, x-ray, akordy, gorące rogi i poświaty, trzymane póki działa studio.",
             ),
             Page::Windows => l.pick(
                 "Every window rules can match.",
                 "Każde okno, które mogą złapać reguły.",
             ),
             Page::States => l.pick(
-                "Named states that color window borders.",
-                "Nazwane stany, które kolorują ramki okien.",
+                "Named states that color window borders and edge glows.",
+                "Nazwane stany, które kolorują ramki okien i poświaty krawędzi.",
             ),
             Page::History => l.pick(
                 "Every apply, newest first.",

@@ -1,13 +1,17 @@
 //! The live side of a rice: things that cannot be written once to a file or the registry and
 //! must be held while noren runs: window rules (`[[window]]` in a profile), named states for
-//! state-colored borders, focus dimming (`[focus]`), the x-ray hold key (`[xray]`), and
-//! commands on leader-key chords and hot corners (`[[command]]`, see [`command`]).
+//! state-colored borders, focus dimming (`[focus]`), the x-ray hold key (`[xray]`), commands
+//! on leader-key chords and hot corners (`[[command]]`, see [`command`]), and edge glows that
+//! show a state (`[[glow]]`, see [`glow`]).
 //!
 //! Nothing here is persistent. `noren run` applies the rules to every window, follows new
 //! windows and state changes, and on exit puts every touched window back as it was.
 
 pub mod command;
 pub mod focus;
+pub mod glow;
+#[cfg(windows)]
+mod glow_win;
 pub mod keys;
 pub mod rules;
 pub mod state;
@@ -19,6 +23,7 @@ use std::path::PathBuf;
 
 pub use command::{Action, Command, Commands};
 pub use focus::{Focus, Xray};
+pub use glow::Glow;
 pub use rules::{Rules, Style, WindowInfo, WindowRule};
 pub use state::State;
 
@@ -35,6 +40,7 @@ pub struct Live {
     pub focus: Option<Focus>,
     pub xray: Option<Xray>,
     pub commands: Commands,
+    pub glows: Vec<Glow>,
     /// The profile as TOML, handed to the command palette.
     pub source: String,
 }
@@ -46,11 +52,17 @@ impl Live {
             focus: profile.focus.as_ref().map(Focus::new).transpose()?,
             xray: profile.xray.as_ref().map(Xray::new).transpose()?,
             commands: profile.commands()?,
+            glows: glow::glows(&profile.glow)?,
             source: toml::to_string(profile).map_err(|e| e.to_string())?,
         };
-        if live.rules.is_empty() && live.focus.is_none() && live.xray.is_none() && !live.commands.bound() {
+        if live.rules.is_empty()
+            && live.focus.is_none()
+            && live.xray.is_none()
+            && !live.commands.bound()
+            && live.glows.is_empty()
+        {
             return Err(
-                "the profile has no [[window]] rules, [focus], [xray], chords or hot corners, nothing to run"
+                "the profile has no [[window]] rules, [focus], [xray], chords, hot corners or [[glow]], nothing to run"
                     .into(),
             );
         }
@@ -161,5 +173,6 @@ mod tests {
         assert!(live("[focus]\ndim = 0.3\n").unwrap().rules.is_empty());
         assert!(live("[xray]\nkey = \"Ctrl+Win\"\n").unwrap().xray.is_some());
         assert!(live("[[window]]\ncorners = \"round\"\n").is_ok());
+        assert_eq!(live("[[glow]]\nstate = \"ci\"\n").unwrap().glows.len(), 1);
     }
 }

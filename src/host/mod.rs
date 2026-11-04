@@ -5,7 +5,7 @@
 pub mod preview;
 pub mod sim;
 #[cfg(windows)]
-mod windows;
+pub(crate) mod windows;
 
 use crate::Rect;
 use crate::surface::Surface;

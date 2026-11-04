@@ -634,8 +634,8 @@ impl Drop for Host {
 }
 
 /// Top-down 32-bit DIB section selected into a memory DC.
-struct Dib {
-    dc: HDC,
+pub(crate) struct Dib {
+    pub(crate) dc: HDC,
     bitmap: HBITMAP,
     old: HGDIOBJ,
     bits: *mut u8,
@@ -643,7 +643,7 @@ struct Dib {
 }
 
 impl Dib {
-    fn new(w: u32, h: u32) -> Result<Self, String> {
+    pub(crate) fn new(w: u32, h: u32) -> Result<Self, String> {
         let info = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
                 biSize: size_of::<BITMAPINFOHEADER>() as u32,
@@ -681,7 +681,7 @@ impl Dib {
         }
     }
 
-    fn pixels(&mut self) -> &mut [u8] {
+    pub(crate) fn pixels(&mut self) -> &mut [u8] {
         // The section holds exactly w*h*4 bytes, lives as long as self, and nothing else
         // writes to it while this borrow exists (GDI only reads it in UpdateLayeredWindow).
         unsafe { std::slice::from_raw_parts_mut(self.bits, self.len) }

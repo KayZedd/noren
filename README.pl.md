@@ -13,14 +13,43 @@ Framework w czystym Ruście: panele, widżety pulpitu, nakładki, palety i trans
 
 </div>
 
-Wybierasz jeden kolor akcentu. noren buduje z niego pełną paletę i wypycha ją do Windowsa, Windows Terminal, VS Code i Firefoksa w jednej transakcji. Panele i widżety rysują się tą samą paletą. Zmiana zdania? `noren rollback` przywraca każdy bajt.
+<p align="center"><img src="docs/studio.webp" alt="noren studio: strona Palette w Kanagawa Wave" width="860"></p>
 
+**noren studio** to miejsce, w którym rice'ujesz. Wybierasz jeden kolor akcentu i patrzysz, jak staje się pełną paletą z tekstem o sprawdzonym kontraście. Widzisz, co się zmieni w Windowsie, Windows Terminal, VS Code i Firefoksie, stosujesz to jako jedną transakcję i cofasz jednym kliknięciem. Reguły okien, przyciemnianie, x-ray, akordy, gorące rogi i poświaty krawędzi trzymasz na żywo, a studio siedzi w zasobniku. Wiersz poleceń `noren` robi to samo ze skryptów i CI.
+
+- **Aplikacja do zarządzania, a nie szukanie po configach.** Szklane panele, płynne animacje, domyślnie Kanagawa Wave, przebarwiane na żywo z Twojej palety. Ctrl+K znajduje każdą stronę i komendę.
 - **Jeden akcent, wszystkie aplikacje.** Rampy OKLCH, których tekst przechodzi kontrast APCA, w trybie ciemnym i jasnym.
 - **Transakcyjnie.** Każdy zapis trafia do dziennika razem z poprzednimi bajtami, zanim się wykona. Nieudane apply cofa się samo.
 - **Twoje zmiany przetrwają.** Konfiguracje JSON zachowują komentarze i kolejność kluczy. Rollback pomija to, co zmieniłeś po apply.
 - **Rice to plik.** `profile.toml` można wersjonować, porównywać i udostępniać.
 - **Prawdziwe powierzchnie pulpitu.** Okna z kanałem alfa per piksel, przepuszczające kliknięcia, na warstwie pulpitu, jako AppBar albo na wierzchu.
 - **Czysty Rust, MIT do samego dna.** Bez klauzuli atrybucji Slinta, bez runtime'u XAML, bez webview.
+
+## noren studio
+
+| Strona | Co robi |
+|---|---|
+| Palette | Akcent z presetami Kanagawa Wave, tryb ciemny lub jasny, wysoki kontrast, rampy na żywo, kontrola APCA, podgląd |
+| Profile | Profil jako TOML, sprawdzany w trakcie pisania |
+| Apply | Diff, zastosowanie jako jedna transakcja, rollback |
+| Live | Trzymanie reguł okien, przyciemniania, x-ray, akordów, gorących rogów i poświat; opcjonalnie od startu |
+| Windows | Każde okno i pasujące do niego reguły |
+| States | Nazwane stany, za którymi idą ramki i poświaty krawędzi |
+| History | Każde zastosowanie, od najnowszego |
+| Settings | Angielski albo polski, ograniczenie animacji |
+
+```sh
+cargo build --release --features studio
+noren-studio                 # startuje na stronie Palette
+noren-studio --page live     # palette, profile, apply, live, windows, states, history, settings
+```
+
+- Ctrl+K otwiera paletę komend: komendy profilu, skoki do stron, zapis i przełącznik trybu na żywo.
+- Zamknięcie okna chowa je do zasobnika; runtime na żywo działa dalej. Menu zasobnika: Otwórz, Trzymaj profil na żywo, Zakończ. Zakończ przywraca wszystkie okna i wychodzi.
+- Domyślny wygląd to Kanagawa Wave, a studio przebarwia się według palety profilu w trakcie edycji.
+- Na Windows 11 okno dostaje tło akrylowe.
+- Ustawienia są w `%LOCALAPPDATA%\noren\studio.json`.
+- CLI nie potrzebuje funkcji `studio`.
 
 ## Co zmienia
 
@@ -30,19 +59,30 @@ Wybierasz jeden kolor akcentu. noren buduje z niego pełną paletę i wypycha j�
 | Windows Terminal | Dodaje schemat kolorów i ustawia go jako domyślny | `settings.json`, BOM i komentarze zachowane |
 | VS Code | `workbench.colorCustomizations` razem z kolorami ANSI terminala | `settings.json`, komentarze zachowane |
 | Firefox | `userChrome.css` i preferencja, która go włącza | Oznaczony blok `noren:begin` / `noren:end` |
-| Dowolne okno | Rogi, tło Mica/acrylic, ramka, kolory paska tytułu i tekstu, ciemna ramka, przezroczystość, monitor | Atrybuty DWM na żywo, trzymane przez `noren run` |
+| Dowolne okno | Rogi, tło Mica/acrylic, ramka, kolory paska tytułu i tekstu, ciemna ramka, przezroczystość, monitor | Atrybuty DWM na żywo, trzymane przez noren studio albo `noren run` |
 | Twój własny UI | Panele, widżety i nakładki zbudowane na noren | `Palette::theme()` |
 
 Eksport do czegokolwiek innego: `noren palette <#akcent> --export terminal|vscode|css|kde|firefox`.
 
 ## Szybki start
 
-1. Zbuduj (zobacz [Budowanie](#budowanie)) albo `cargo install --path .`, żeby mieć `noren` w `PATH`.
-2. Podejrzyj paletę:
+1. Zbuduj (zobacz [Budowanie](#budowanie)):
+   ```sh
+   cargo build --release --features studio
+   ```
+2. Uruchom `noren-studio`. Na **Palette** wybierz akcent; na **Profile** dodaj aplikacje do ostylowania (profil startowy ma Windows Terminal i VS Code).
+3. Na **Apply** przejrzyj diff i naciśnij Apply. Jedna transakcja, zapisana w dzienniku.
+4. Zmiana zdania? Cofnij na **Apply** przywraca każdy bajt. **History** pokazuje każde zastosowanie.
+
+### Z wiersza poleceń
+
+Te same kroki, dla skryptów i CI. `cargo install --path .` daje `noren` w `PATH`.
+
+1. Podejrzyj paletę:
    ```sh
    noren palette '#7e9cd8'
    ```
-3. Napisz `kanagawa.toml`:
+2. Napisz `kanagawa.toml`:
    ```toml
    schema = 1
    name = "kanagawa"
@@ -58,12 +98,12 @@ Eksport do czegokolwiek innego: `noren palette <#akcent> --export terminal|vscod
    [terminal]
    [vscode]
    ```
-4. Zobacz, co się zmieni, i zastosuj:
+3. Zobacz, co się zmieni, i zastosuj:
    ```sh
    noren diff kanagawa.toml
    noren apply kanagawa.toml
    ```
-5. Cofnij:
+4. Cofnij:
    ```sh
    noren rollback
    ```
@@ -152,6 +192,25 @@ builtin = "palette"
 ```
 
 Każda `[[command]]` ma unikalną nazwę i dokładnie jedną akcję: `run`, `open`, `state` albo `builtin = "palette"`. Wciśnij i puść leader, potem wpisz klawisze: są połykane, więc aplikacja pod spodem nic nie widzi, zły klawisz albo Esc anuluje, a modyfikatory mogą zostać wciśnięte. Żaden akord nie może być prefiksem innego. Gorący róg odpala raz na wizytę, gdy kursor postoi w jego strefie 2 px; działa per monitor i nic nie robi przy wciśniętym przycisku myszy ani gdy fokus ma aplikacja pełnoekranowa. Paleta to małe okno z wyszukiwaniem rozmytym po wszystkich komendach, z klawiszami czy bez: strzałki przesuwają, Enter uruchamia, Esc albo kliknięcie obok zamyka. W noren studio Ctrl+K otwiera tę samą paletę nad aplikacją, z komendami profilu oraz skokami do stron, zapisem i przełącznikiem trybu na żywo. `noren commands` wypisuje i uruchamia komendy z terminala.
+
+### Poświata krawędzi
+
+```toml
+[[glow]]
+state = "ci"                   # podąża za `noren state ci ...`; ciemno, gdy stan jest wyczyszczony
+edges = ["top"]                # top | bottom | left | right, domyślnie wszystkie cztery
+monitor = 1                    # numeracja jak w regułach okien, domyślnie każdy monitor
+width = 8                      # piksele przy skali 100%, 2 do 48
+opacity = 0.85                 # szczyt, 0.1 do 1
+pulse = ["busy", "warn"]       # stany, które oddychają zamiast świecić równo (domyślnie)
+settle = 6                     # ok gaśnie po tylu sekundach, domyślnie świeci dalej
+
+[[glow]]
+state = "agent"                # `noren state agent warn`, gdy agent czeka na Ciebie
+edges = ["bottom"]
+```
+
+Cienki pasek światła wzdłuż krawędzi ekranu pokazuje stan bez żadnego okna: zielony, gdy CI przeszło, czerwony, gdy padło, powolny oddech, gdy trwa build albo agent czeka na input. Kolory pochodzą z palety (ok positive, fail negative, warn warning, busy accent). Zmiana przechodzi płynnie, a wyczyszczony stan gaśnie. Światło jest najmocniejsze przy krawędzi, a końce się zwężają. Paski przepuszczają kliknięcia, nigdy nie biorą fokusu i chowają się na monitorze, na którym fokus ma aplikacja pełnoekranowa. Dwie poświaty nie mogą świecić na tej samej krawędzi tego samego monitora.
 
 ## FAQ
 
@@ -256,24 +315,9 @@ Obciążenie GPU pochodzi z liczników wydajności `GPU Engine`, tego samego źr
 
 Tekst używa rodzin czcionek z motywu i spada na czcionki systemowe. Żadne czcionki nie są dołączone. Żeby dołączyć własną, wywołaj `TextSystem::load_fonts(path)` i sprawdź jej licencję.
 
-## noren studio
-
-Aplikacja okienkowa do wszystkiego, co robi CLI: edycja palety z rampami na żywo i kontrolą APCA, edycja profilu z walidacją w locie, podgląd diffu, apply i rollback, trzymanie profilu na żywo, lista okien i pasujących reguł, stany i historia.
-
-```sh
-cargo build --release --features studio
-noren-studio                 # startuje na stronie Palette
-noren-studio --page live     # palette, profile, apply, live, windows, states, history, settings
-```
-
-- Ctrl+K otwiera paletę komend: komendy profilu, skoki do stron, zapis i przełącznik trybu na żywo.
-- Zamknięcie okna chowa je do zasobnika; runtime na żywo działa dalej. Menu zasobnika: Otwórz, Trzymaj profil na żywo, Zakończ. Zakończ przywraca wszystkie okna i wychodzi.
-- Domyślny wygląd to Kanagawa Wave, a studio przebarwia się według palety profilu w trakcie edycji.
-- Na Windows 11 okno dostaje tło akrylowe. Ustawienia mają angielski i polski oraz przełącznik ograniczenia animacji.
-- Ustawienia są w `%LOCALAPPDATA%\noren\studio.json`.
-- CLI się nie zmienia i nie potrzebuje funkcji `studio`.
-
 ## Wiersz poleceń
+
+Wszystko, co robi studio, dla skryptów, CI i klawiatury.
 
 ```sh
 noren palette <#akcent> [--light] [--high]           # próbki w terminalu
@@ -282,7 +326,7 @@ noren diff <profile.toml>                            # co zmieni apply
 noren apply <profile.toml>                           # zastosuj jako jedną transakcję
 noren rollback [--force]                             # cofnij najnowszą transakcję
 noren log                                            # lista transakcji
-noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi do Ctrl+C
+noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty do Ctrl+C
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
 noren commands <profile.toml> [<nazwa>]              # lista [[command]] albo uruchom jedną
@@ -308,7 +352,7 @@ W planach:
 - [ ] Układy per aplikacja na pierwszym planie i per pulpit wirtualny
 - [ ] Położenie widżetów i kolor tekstu dobierane z tapety
 - [ ] Motyw zależny od pory dnia i wschodu słońca
-- [ ] Poświata krawędzi ekranu jako status
+- [x] Poświata krawędzi ekranu jako status
 - [x] Akordy leader-key, paleta komend, gorące rogi
 - [ ] Zamiennik Alt+Tab z żywymi miniaturami
 - [ ] Widżet multimediów z motywem z okładki
@@ -317,9 +361,10 @@ W planach:
 
 ## Ograniczenia
 
-- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów i okna palety. Zgłoszenia mile widziane.
+- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety i poświat krawędzi. Zgłoszenia mile widziane.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
+- Poświaty to okna topmost, ale pasek zadań i tak może rysować się nad poświatą na swojej krawędzi. Poświaty nie były jeszcze testowane na prawdziwym sprzęcie.
 - `noren run` musi działać, żeby reguły okien się trzymały. Zabity bez Ctrl+C zostawia okna w swoim stylu, dopóki się nie zamkną.
 - Firefox ignoruje `userChrome.css` do restartu. VS Code i Windows Terminal przeładowują się same.
 - Rollback usuwa pliki utworzone przez noren, ale zostawia pusty folder `chrome` Firefoksa.
@@ -356,7 +401,7 @@ Struktura:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, rampy, eksport do Terminala, VS Code, CSS, KDE, Firefoksa, akcentu Windows |
 | [src/rice/](src/rice/) | Profile, dziennik, apply i rollback, merge JSONC, magazyn rejestru i plików |
-| [src/shell/](src/shell/) | Reguły okien, stany, przyciemnianie, x-ray, komendy (akordy, gorące rogi) i runtime Win32, który je trzyma |
+| [src/shell/](src/shell/) | Reguły okien, stany, przyciemnianie, x-ray, komendy (akordy, gorące rogi), poświaty krawędzi i runtime Win32, który je trzyma |
 | [src/bin/noren.rs](src/bin/noren.rs) | Wiersz poleceń |
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: aplikacja egui, szklany motyw, zasobnik, paleta komend |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |

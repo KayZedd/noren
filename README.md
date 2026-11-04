@@ -13,14 +13,43 @@ English | [Polski](README.pl.md)
 
 </div>
 
-Pick one accent color. noren builds a full palette from it and pushes it to Windows, Windows Terminal, VS Code and Firefox in one transaction. Panels and widgets are drawn with the same palette. Changed your mind? `noren rollback` puts every byte back.
+<p align="center"><img src="docs/studio.webp" alt="noren studio: the Palette page in Kanagawa Wave" width="860"></p>
 
+**noren studio** is where you rice. Pick one accent color and watch it become a full palette with contrast-checked text. See what will change in Windows, Windows Terminal, VS Code and Firefox, apply it as one transaction, and roll it back with one click. Hold window rules, focus dimming, x-ray, chords, hot corners and edge glows live while the studio sits in the tray. The `noren` command line does the same from scripts and CI.
+
+- **A management app, not a config hunt.** Glass panels, smooth motion, Kanagawa Wave by default, retinted live from your palette. Ctrl+K finds any page or command.
 - **One accent, every app.** OKLCH ramps whose text passes APCA contrast, in dark and light mode.
 - **Transactional.** Each write is journaled with the previous bytes before it happens. A failed apply undoes itself.
 - **Your edits survive.** JSON configs keep their comments and key order. Rollback skips anything you changed after the apply.
 - **A rice is a file.** `profile.toml` is versioned, diffable and shareable.
 - **Real desktop surfaces.** Per-pixel-alpha windows that let clicks through, on the desktop layer, as an AppBar or on top.
 - **Pure Rust, MIT all the way down.** No Slint attribution clause, no XAML runtime, no webview.
+
+## noren studio
+
+| Page | What it does |
+|---|---|
+| Palette | Accent with Kanagawa Wave presets, dark or light, high contrast, live ramps, APCA checks, a preview |
+| Profile | The profile as TOML, checked as you type |
+| Apply | The diff, apply as one transaction, roll back |
+| Live | Hold window rules, focus dimming, x-ray, chords, hot corners and edge glows; optionally on start |
+| Windows | Every window, and which rules match it |
+| States | Set the named states that borders and edge glows follow |
+| History | Every apply, newest first |
+| Settings | English or Polish, Reduce motion |
+
+```sh
+cargo build --release --features studio
+noren-studio                 # opens on the Palette page
+noren-studio --page live     # palette, profile, apply, live, windows, states, history, settings
+```
+
+- Ctrl+K opens the command palette: the profile's commands, page jumps, Save and the live toggle.
+- Closing the window hides it to the tray; the live runtime keeps running. Tray menu: Open, Hold profile live, Quit. Quit restores every window and exits.
+- Kanagawa Wave is the default look, and the studio retints itself from the profile's palette as you edit it.
+- On Windows 11 the window gets an acrylic backdrop.
+- Settings live in `%LOCALAPPDATA%\noren\studio.json`.
+- The CLI does not need the `studio` feature.
 
 ## What it customizes
 
@@ -30,19 +59,30 @@ Pick one accent color. noren builds a full palette from it and pushes it to Wind
 | Windows Terminal | Adds a color scheme and makes it the default | `settings.json`, BOM and comments kept |
 | VS Code | `workbench.colorCustomizations`, including the terminal ANSI colors | `settings.json`, comments kept |
 | Firefox | `userChrome.css`, plus the pref that enables it | A marked `noren:begin` / `noren:end` block |
-| Any window | Corners, Mica/acrylic backdrop, border, caption and title colors, dark frame, opacity, monitor | Live DWM attributes, held by `noren run` |
+| Any window | Corners, Mica/acrylic backdrop, border, caption and title colors, dark frame, opacity, monitor | Live DWM attributes, held by noren studio or `noren run` |
 | Your own UI | Panels, widgets and overlays built with noren | `Palette::theme()` |
 
 Exports for anything else: `noren palette <#accent> --export terminal|vscode|css|kde|firefox`.
 
 ## Quick start
 
-1. Build it (see [Building](#building)), or `cargo install --path .` to get `noren` on your `PATH`.
-2. Preview a palette:
+1. Build it (see [Building](#building)):
+   ```sh
+   cargo build --release --features studio
+   ```
+2. Run `noren-studio`. On **Palette**, pick an accent; on **Profile**, add the apps to theme (the starter profile has Windows Terminal and VS Code).
+3. On **Apply**, read the diff and press Apply. One transaction, journaled.
+4. Changed your mind? Roll back on **Apply** puts every byte back. **History** lists every apply.
+
+### From the command line
+
+The same steps, for scripts and CI. `cargo install --path .` puts `noren` on your `PATH`.
+
+1. Preview a palette:
    ```sh
    noren palette '#7e9cd8'
    ```
-3. Write `kanagawa.toml`:
+2. Write `kanagawa.toml`:
    ```toml
    schema = 1
    name = "kanagawa"
@@ -58,12 +98,12 @@ Exports for anything else: `noren palette <#accent> --export terminal|vscode|css
    [terminal]
    [vscode]
    ```
-4. See what would change, then apply:
+3. See what would change, then apply:
    ```sh
    noren diff kanagawa.toml
    noren apply kanagawa.toml
    ```
-5. Undo it:
+4. Undo it:
    ```sh
    noren rollback
    ```
@@ -152,6 +192,25 @@ builtin = "palette"
 ```
 
 Each `[[command]]` has a unique name and exactly one action: `run`, `open`, `state` or `builtin = "palette"`. Press and release the leader, then type the keys: the keys are swallowed so the app under you sees nothing, wrong keys or Esc cancel, and modifiers may stay held. No chord may be a prefix of another. A hot corner fires once per visit after the pointer rests in the corner's 2 px zone; it is per monitor and does nothing while a mouse button is held or a fullscreen app has focus. The palette is a small window that fuzzy-searches every command, keys or not: arrows move, Enter runs, Esc or clicking away closes. In noren studio, Ctrl+K opens the same palette over the app, with the profile's commands plus page jumps, Save and the live toggle. `noren commands` lists and runs commands from the terminal.
+
+### Edge glow
+
+```toml
+[[glow]]
+state = "ci"                   # follows `noren state ci ...`; dark while the state is clear
+edges = ["top"]                # top | bottom | left | right, default all four
+monitor = 1                    # same numbering as window rules, default every monitor
+width = 8                      # pixels at 100% scale, 2 to 48
+opacity = 0.85                 # peak, 0.1 to 1
+pulse = ["busy", "warn"]       # states that breathe instead of glowing steadily (the default)
+settle = 6                     # ok fades out after this many seconds, default: stays on
+
+[[glow]]
+state = "agent"                # `noren state agent warn` when an agent waits for you
+edges = ["bottom"]
+```
+
+A thin band of light along a screen edge shows a state without a window: green when CI passed, red when it failed, a slow breath while a build runs or an agent waits for input. Colors come from the palette (ok positive, fail negative, warn warning, busy accent). A change crossfades and a cleared state fades out. Light is strongest at the edge and the ends taper. Bands are click-through, never take focus, and step aside on a monitor where a fullscreen app has the focus. Two glows may not light the same edge of the same monitor.
 
 ## FAQ
 
@@ -256,24 +315,9 @@ GPU load comes from the `GPU Engine` performance counters, the same source Task 
 
 Text uses the theme's font families and falls back to system fonts. No fonts are bundled. To ship one, call `TextSystem::load_fonts(path)` and check its license.
 
-## noren studio
-
-A desktop app for everything the CLI does: edit the palette with live ramps and APCA checks, edit the profile with live validation, preview the diff and apply or roll back, hold the profile live, browse windows and the rules that match them, set states, and read the history.
-
-```sh
-cargo build --release --features studio
-noren-studio                 # opens on the Palette page
-noren-studio --page live     # palette, profile, apply, live, windows, states, history, settings
-```
-
-- Ctrl+K opens the command palette: the profile's commands, page jumps, Save and the live toggle.
-- Closing the window hides it to the tray; the live runtime keeps running. Tray menu: Open, Hold profile live, Quit. Quit restores every window and exits.
-- Kanagawa Wave is the default look, and the studio retints itself from the profile's palette as you edit it.
-- On Windows 11 the window gets an acrylic backdrop. Settings has English and Polish, and a Reduce motion switch.
-- Settings live in `%LOCALAPPDATA%\noren\studio.json`.
-- The CLI is unchanged and does not need the `studio` feature.
-
 ## Command line
+
+Everything the studio does, for scripts, CI and keyboards.
 
 ```sh
 noren palette <#accent> [--light] [--high]           # swatches in the terminal
@@ -282,7 +326,7 @@ noren diff <profile.toml>                            # what apply would change
 noren apply <profile.toml>                           # apply as one transaction
 noren rollback [--force]                             # undo the newest transaction
 noren log                                            # list transactions
-noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners until Ctrl+C
+noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows until Ctrl+C
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
 noren commands <profile.toml> [<name>]               # list [[command]]s, or run one
@@ -308,7 +352,7 @@ Planned:
 - [ ] Layouts per foreground app and virtual desktop
 - [ ] Widget placement and text color picked from the wallpaper
 - [ ] Theme by time of day and sunrise
-- [ ] Ambient edge glow for status
+- [x] Ambient edge glow for status
 - [x] Leader-key chords, command palette, hot corners
 - [ ] Alt+Tab replacement with live thumbnails
 - [ ] Media widget themed from the cover art
@@ -317,9 +361,10 @@ Planned:
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners and the palette window. Reports are welcome.
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window and edge glows. Reports are welcome.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
+- Edge glows are topmost windows, but the taskbar can still draw over a glow on its edge. Glows have not been tried on real hardware yet.
 - `noren run` must keep running for window rules to hold. If it is killed without Ctrl+C, the windows keep their style until they close.
 - Firefox ignores `userChrome.css` until it restarts. VS Code and Windows Terminal reload on their own.
 - Rollback removes the files noren created but leaves an empty Firefox `chrome` folder behind.
@@ -356,7 +401,7 @@ Layout:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, ramps, exports for Terminal, VS Code, CSS, KDE, Firefox, Windows accent |
 | [src/rice/](src/rice/) | Profiles, journal, apply and rollback, JSONC merge, registry and file store |
-| [src/shell/](src/shell/) | Window rules, states, focus dimming, x-ray, commands (chords, hot corners), and the Win32 runtime that holds them |
+| [src/shell/](src/shell/) | Window rules, states, focus dimming, x-ray, commands (chords, hot corners), edge glows, and the Win32 runtime that holds them |
 | [src/bin/noren.rs](src/bin/noren.rs) | Command line |
 | [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: egui app, glass theme, tray, command palette |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |

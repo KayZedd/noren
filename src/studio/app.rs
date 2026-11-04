@@ -1066,7 +1066,7 @@ impl Studio {
         });
         ui.add_space(4.0);
         let Ok(p) = &self.parsed else { return };
-        ui.columns(3, |cols| {
+        ui.columns(4, |cols| {
             glass(&mut cols[0], th, |ui| {
                 ui.set_min_height(80.0);
                 ui.label(
@@ -1091,6 +1091,16 @@ impl Studio {
                 let v = p.xray.as_ref().map_or("off".into(), |x| x.key.clone());
                 ui.label(RichText::new(v).size(22.0).strong().color(th.accent));
                 ui.label(RichText::new(l.pick("x-ray hold key", "klawisz x-ray")).color(th.dim));
+            });
+            glass(&mut cols[3], th, |ui| {
+                ui.set_min_height(80.0);
+                ui.label(
+                    RichText::new(p.glow.len().to_string())
+                        .size(28.0)
+                        .strong()
+                        .color(th.accent),
+                );
+                ui.label(RichText::new(l.pick("edge glows", "poświaty krawędzi")).color(th.dim));
             });
         });
         ui.add_space(4.0);

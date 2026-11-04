@@ -39,6 +39,10 @@
 //! name = "Terminal"
 //! keys = "t"
 //! run = ["wt.exe"]
+//!
+//! [[glow]]                 # light a screen edge from a state (see `shell::glow`)
+//! state = "ci"
+//! edges = ["top"]
 //! ```
 //!
 //! Every target accepts `path = "..."` to point at a non-default config file.
@@ -54,6 +58,7 @@ use super::{Change, Slot, Store};
 use crate::palette::{Palette, PaletteSpec, export};
 use crate::shell::command::{ChordsConfig, CommandConfig, Commands, CornersConfig};
 use crate::shell::focus::{Focus, FocusConfig, Xray, XrayConfig};
+use crate::shell::glow::{self, GlowConfig};
 use crate::shell::{Rules, WindowRule};
 
 /// Profile format version this build reads.
@@ -83,6 +88,9 @@ pub struct Profile {
     /// Named actions for the palette, chords and hot corners (see [`crate::shell::command`]).
     #[serde(default)]
     pub command: Vec<CommandConfig>,
+    /// Screen edges lit by a state (see [`crate::shell::glow`]).
+    #[serde(default)]
+    pub glow: Vec<GlowConfig>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -154,6 +162,7 @@ impl Profile {
         profile.focus.as_ref().map(Focus::new).transpose()?;
         profile.xray.as_ref().map(Xray::new).transpose()?;
         profile.commands()?;
+        glow::glows(&profile.glow)?;
         Ok(profile)
     }
 
@@ -430,6 +439,24 @@ profile = "ff"
         ))
         .unwrap_err();
         assert!(bad.contains("no [chords] leader"), "{bad}");
+    }
+
+    #[test]
+    fn glows_parse_are_validated_and_survive_a_round_trip() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n";
+        let p = Profile::parse(&format!(
+            "{base}[[glow]]\nstate = \"ci\"\nedges = [\"top\"]\nsettle = 5\n\
+             [[glow]]\nstate = \"agent\"\nedges = [\"bottom\"]\npulse = [\"warn\"]\n"
+        ))
+        .unwrap();
+        assert_eq!(p.glow.len(), 2);
+        let again = Profile::parse(&toml::to_string(&p).unwrap()).unwrap();
+        assert_eq!(again, p);
+        let bad = Profile::parse(&format!(
+            "{base}[[glow]]\nstate = \"a\"\n[[glow]]\nstate = \"b\"\nedges = [\"left\"]\n"
+        ))
+        .unwrap_err();
+        assert!(bad.contains("both light the left edge"), "{bad}");
     }
 
     #[test]

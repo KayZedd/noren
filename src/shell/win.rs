@@ -7,7 +7,8 @@
 //! while applying a style can re-enter the runtime.
 //!
 //! Focus dimming is one layered, click-through popup over the virtual screen, kept directly
-//! behind the foreground window with `SetWindowPos(insert_after = foreground)`.
+//! behind the foreground window with `SetWindowPos(insert_after = foreground)`. Edge glows are
+//! topmost popups of their own (see `glow_win`), redrawn every 33 ms only while they move.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -38,18 +39,21 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EnumWindows, GA_ROOT, GWL_EXSTYLE, GetAncestor,
     GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindowLongPtrW,
     GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HC_ACTION, IsIconic, IsWindow, IsWindowVisible,
-    IsZoomed, KBDLLHOOKSTRUCT, LWA_ALPHA, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, RegisterClassW,
-    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SW_MAXIMIZE,
-    SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetLayeredWindowAttributes, SetTimer,
-    SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, WH_KEYBOARD_LL,
-    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER,
-    WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
+    IsZoomed, KBDLLHOOKSTRUCT, KillTimer, LWA_ALPHA, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW,
+    RegisterClassW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE,
+    SW_MAXIMIZE, SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetLayeredWindowAttributes,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx,
+    WH_KEYBOARD_LL, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_KEYDOWN, WM_QUIT,
+    WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    WS_POPUP,
 };
 use windows::core::{BOOL, PWSTR, w};
 
 use super::Live;
 use super::command::{self, Action, Chords, Commands, HotCorners};
 use super::focus::{Focus, Xray, fullscreen};
+use super::glow::Glows;
+use super::glow_win::{Layers, Screen};
 use super::keys::Hold;
 use super::rules::{Op, Rules, ScreenRect, Style, WindowInfo, monitor_order, ops, relocate};
 use super::state::{self, State};
@@ -68,6 +72,8 @@ const SKIP_CLASSES: [&str; 4] = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_S
 const WAKE: u32 = WM_APP + 1;
 const STATE_POLL_MS: u32 = 500;
 const POINTER_POLL_MS: u32 = 50;
+/// Glow animation frames, about 30 a second, only while a glow moves.
+const FRAME_MS: u32 = 33;
 
 /// Queue entry from the keyboard hook: x-ray held (`1`) or released (`0`). Not a WinEvent id.
 const XRAY: u32 = 0xFFFF_0001;
@@ -114,6 +120,10 @@ struct Runtime {
     corners: Option<HotCorners>,
     /// The profile as TOML, for the command palette.
     source: String,
+    glows: Glows,
+    layers: Option<Layers>,
+    /// The glow frame timer, `0` while no glow moves.
+    frame: usize,
 }
 
 fn win_event_hook(event: u32) -> HWINEVENTHOOK {
@@ -152,6 +162,7 @@ pub fn hold(
         focus,
         xray,
         commands,
+        glows,
         source,
     } = live;
     // SAFETY: plain Win32 calls; the hook and handler only touch thread-safe statics or the
@@ -183,7 +194,15 @@ pub fn hold(
                 .into_iter()
                 .map(win_event_hook),
             );
+        } else if !glows.is_empty() {
+            // Glows step aside for fullscreen apps, which arrive through the foreground.
+            hooks.push(win_event_hook(EVENT_SYSTEM_FOREGROUND));
         }
+        let layers = if glows.is_empty() {
+            None
+        } else {
+            Some(Layers::new()?)
+        };
         HOLD.with(|h| *h.borrow_mut() = xray.as_ref().map(|x| Hold::new(x.combo.clone())));
         let chords = commands.chords();
         let chording = chords.is_some();
@@ -197,7 +216,7 @@ pub fn hold(
         } else {
             None
         };
-        let watch_states = rules.uses_states() && state_dir.is_some();
+        let watch_states = (rules.uses_states() || !glows.is_empty()) && state_dir.is_some();
         let mut rt = Runtime {
             rules,
             palette,
@@ -213,10 +232,14 @@ pub fn hold(
             corners: commands.hot_corners(),
             commands,
             source,
+            glows: Glows::new(glows, Instant::now()),
+            layers,
+            frame: 0,
         };
         if watch_states {
             rt.states = rt.read_states();
         }
+        rt.glows.update(&rt.states, Instant::now());
         let slow = if watch_states || rt.xray.is_some() || chording {
             SetTimer(None, 0, STATE_POLL_MS, None)
         } else {
@@ -229,6 +252,7 @@ pub fn hold(
         };
         rt.refresh_all();
         rt.update_focus();
+        rt.draw_glows();
         eprintln!(
             "noren: {} windows styled{}{}, Ctrl+C restores them and exits",
             rt.applied.len(),
@@ -245,19 +269,26 @@ pub fn hold(
         if let Some(leader) = rt.commands.leader.as_ref().filter(|_| chording) {
             eprintln!("noren: {leader} starts a chord");
         }
+        if !rt.glows.is_empty() {
+            eprintln!("noren: {} edge glow(s) follow their states", rt.glows.list.len());
+        }
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             match msg.message {
                 WM_TIMER if pointer != 0 && msg.wParam.0 == pointer => rt.poll_pointer(),
+                WM_TIMER if rt.frame != 0 && msg.wParam.0 == rt.frame => rt.draw_glows(),
                 WM_TIMER if slow != 0 && msg.wParam.0 == slow => {
                     if watch_states {
                         let now = rt.read_states();
                         if now != rt.states {
                             rt.states = now;
+                            rt.glows.update(&rt.states, Instant::now());
                             rt.refresh_all();
                         }
                     }
+                    // Also catches monitors that came, went or changed resolution.
+                    rt.draw_glows();
                     // A key-up the hook never saw must not leave every window see-through.
                     let lost = HOLD.with(|h| {
                         h.borrow_mut()
@@ -295,6 +326,7 @@ pub fn hold(
             }
             if focus_changed {
                 rt.update_focus();
+                rt.draw_glows();
             }
         }
 
@@ -308,6 +340,12 @@ pub fn hold(
         rt.restore_all();
         if let Some((_, overlay)) = rt.focus.take() {
             let _ = DestroyWindow(overlay);
+        }
+        if let Some(mut layers) = rt.layers.take() {
+            layers.clear();
+        }
+        if rt.frame != 0 {
+            let _ = KillTimer(None, rt.frame);
         }
     }
     Ok(())
@@ -489,21 +527,34 @@ fn screen_rect(r: RECT) -> ScreenRect {
 
 unsafe extern "system" fn collect_monitor(monitor: HMONITOR, _: HDC, _: *mut RECT, data: LPARAM) -> BOOL {
     // SAFETY: `data` is the Vec passed by `monitors`.
-    let out = unsafe { &mut *(data.0 as *mut Vec<(HMONITOR, ScreenRect, bool)>) };
+    let out = unsafe { &mut *(data.0 as *mut Vec<Monitor>) };
     let mut info = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
     // SAFETY: OS-provided handle and a correctly sized struct.
     if unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
-        out.push((monitor, screen_rect(info.rcWork), info.dwFlags & 1 != 0));
+        out.push(Monitor {
+            handle: monitor,
+            work: screen_rect(info.rcWork),
+            full: screen_rect(info.rcMonitor),
+            primary: info.dwFlags & 1 != 0,
+        });
     }
     true.into()
 }
 
-/// Work areas in `monitor = N` order.
-fn monitors() -> Vec<(HMONITOR, ScreenRect)> {
-    let mut all: Vec<(HMONITOR, ScreenRect, bool)> = Vec::new();
+#[derive(Clone, Copy)]
+struct Monitor {
+    handle: HMONITOR,
+    work: ScreenRect,
+    full: ScreenRect,
+    primary: bool,
+}
+
+/// Monitors in `monitor = N` order.
+fn monitors() -> Vec<Monitor> {
+    let mut all: Vec<Monitor> = Vec::new();
     // SAFETY: synchronous enumeration; the callback only borrows `all`.
     unsafe {
         let _ = EnumDisplayMonitors(
@@ -513,11 +564,8 @@ fn monitors() -> Vec<(HMONITOR, ScreenRect)> {
             LPARAM(&mut all as *mut _ as isize),
         );
     }
-    let keyed: Vec<(ScreenRect, bool)> = all.iter().map(|&(_, r, p)| (r, p)).collect();
-    monitor_order(&keyed)
-        .into_iter()
-        .map(|i| (all[i].0, all[i].1))
-        .collect()
+    let keyed: Vec<(ScreenRect, bool)> = all.iter().map(|m| (m.work, m.primary)).collect();
+    monitor_order(&keyed).into_iter().map(|i| all[i]).collect()
 }
 
 impl Runtime {
@@ -708,10 +756,15 @@ impl Runtime {
 
     /// A game or video has the screen: hot corners stay quiet.
     fn fullscreen_foreground(&mut self) -> bool {
+        self.fullscreen_monitor().is_some()
+    }
+
+    /// The monitor a fullscreen foreground window covers, if any.
+    fn fullscreen_monitor(&mut self) -> Option<HMONITOR> {
         // SAFETY: read-only queries on the foreground window.
         let fg = unsafe { GetForegroundWindow() };
         if fg.is_invalid() || self.info(fg).is_none() {
-            return false;
+            return None;
         }
         let mut r = RECT::default();
         let mut mi = MONITORINFO {
@@ -719,11 +772,42 @@ impl Runtime {
             ..Default::default()
         };
         // SAFETY: read-only queries with correctly sized out structs.
-        let known = unsafe {
-            GetWindowRect(fg, &mut r).is_ok()
-                && GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST), &mut mi).as_bool()
-        };
-        known && fullscreen(screen_rect(r), screen_rect(mi.rcMonitor))
+        let monitor = unsafe { MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST) };
+        // SAFETY: as above.
+        let known =
+            unsafe { GetWindowRect(fg, &mut r).is_ok() && GetMonitorInfoW(monitor, &mut mi).as_bool() };
+        (known && fullscreen(screen_rect(r), screen_rect(mi.rcMonitor))).then_some(monitor)
+    }
+
+    /// Draws the glows as they are now and keeps the frame timer running exactly while one
+    /// moves.
+    fn draw_glows(&mut self) {
+        if self.layers.is_none() {
+            return;
+        }
+        let now = Instant::now();
+        let hidden = self.fullscreen_monitor();
+        let screens: Vec<Screen> = monitors()
+            .into_iter()
+            .map(|m| Screen {
+                handle: m.handle,
+                rect: m.full,
+            })
+            .collect();
+        let bars = self.glows.bars(&self.palette, now);
+        if let Some(layers) = self.layers.as_mut() {
+            layers.show(&self.glows.list, &bars, &screens, hidden);
+        }
+        let moving = self.glows.animating(now);
+        // SAFETY: thread timers owned by this loop.
+        unsafe {
+            if moving && self.frame == 0 {
+                self.frame = SetTimer(None, 0, FRAME_MS, None);
+            } else if !moving && self.frame != 0 {
+                let _ = KillTimer(None, self.frame);
+                self.frame = 0;
+            }
+        }
     }
 
     fn restore_all(&mut self) {
@@ -782,7 +866,12 @@ fn set_opacity(hwnd: HWND, applied: &mut Applied, alpha: Option<u8>) {
 
 fn move_to_monitor(hwnd: HWND, n: u32) {
     let all = monitors();
-    let Some(&(target, to)) = all.get(n as usize - 1) else {
+    let Some(&Monitor {
+        handle: target,
+        work: to,
+        ..
+    }) = all.get(n as usize - 1)
+    else {
         return;
     };
     // SAFETY: position queries and a move of a foreign top-level window.
@@ -791,7 +880,7 @@ fn move_to_monitor(hwnd: HWND, n: u32) {
         if current == target {
             return;
         }
-        let Some(&(_, from)) = all.iter().find(|(m, _)| *m == current) else {
+        let Some(from) = all.iter().find(|m| m.handle == current).map(|m| m.work) else {
             return;
         };
         let zoomed = IsZoomed(hwnd).as_bool();
@@ -836,6 +925,9 @@ pub fn list() -> Vec<WindowInfo> {
         commands: Commands::new(&[], None, None).expect("no commands are valid"),
         corners: None,
         source: String::new(),
+        glows: Glows::new(Vec::new(), Instant::now()),
+        layers: None,
+        frame: 0,
     };
     top_level_windows()
         .into_iter()
