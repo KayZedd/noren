@@ -31,6 +31,14 @@
 //!
 //! [xray]                   # hold to see through every window
 //! key = "Ctrl+Alt+Space"
+//!
+//! [chords]                 # leader key for [[command]] keys (see `shell::command`)
+//! leader = "Alt+Space"
+//!
+//! [[command]]              # in the palette, on a chord and/or a hot corner
+//! name = "Terminal"
+//! keys = "t"
+//! run = ["wt.exe"]
 //! ```
 //!
 //! Every target accepts `path = "..."` to point at a non-default config file.
@@ -44,6 +52,7 @@ use serde_json::{Value, json};
 use super::merge::{JsonEdit, merge_jsonc, replace_block};
 use super::{Change, Slot, Store};
 use crate::palette::{Palette, PaletteSpec, export};
+use crate::shell::command::{ChordsConfig, CommandConfig, Commands, CornersConfig};
 use crate::shell::focus::{Focus, FocusConfig, Xray, XrayConfig};
 use crate::shell::{Rules, WindowRule};
 
@@ -67,6 +76,13 @@ pub struct Profile {
     pub focus: Option<FocusConfig>,
     /// Hold a key to see through every window.
     pub xray: Option<XrayConfig>,
+    /// The leader key for command chords.
+    pub chords: Option<ChordsConfig>,
+    /// Hot-corner timing.
+    pub corners: Option<CornersConfig>,
+    /// Named actions for the palette, chords and hot corners (see [`crate::shell::command`]).
+    #[serde(default)]
+    pub command: Vec<CommandConfig>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -137,7 +153,13 @@ impl Profile {
         Rules::new(&profile.window)?;
         profile.focus.as_ref().map(Focus::new).transpose()?;
         profile.xray.as_ref().map(Xray::new).transpose()?;
+        profile.commands()?;
         Ok(profile)
+    }
+
+    /// The `[[command]]`s with their `[chords]` and `[corners]` settings, validated.
+    pub fn commands(&self) -> Result<Commands, String> {
+        Commands::new(&self.command, self.chords.as_ref(), self.corners.as_ref())
     }
 
     pub fn load(path: &Path) -> Result<Self, String> {
@@ -385,6 +407,29 @@ profile = "ff"
         assert!(bad.contains("[xray] key"), "{bad}");
         let bad = Profile::parse(&format!("{base}[focus]\ndim = 1.0\n")).unwrap_err();
         assert!(bad.contains("[focus] dim"), "{bad}");
+    }
+
+    #[test]
+    fn commands_parse_are_validated_and_survive_a_round_trip() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n";
+        let text = format!(
+            "{base}[chords]\nleader = \"Alt+Space\"\n[corners]\ndwell = 0.1\n\
+             [[command]]\nname = \"Terminal\"\nkeys = \"t\"\nrun = [\"wt.exe\"]\n\
+             [[command]]\nname = \"Palette\"\ncorner = \"top-left\"\nbuiltin = \"palette\"\n"
+        );
+        let p = Profile::parse(&text).unwrap();
+        assert_eq!(p.commands().unwrap().list.len(), 2);
+        assert!(
+            p.windows.is_none() && p.window.is_empty(),
+            "commands are live only"
+        );
+        let again = Profile::parse(&toml::to_string(&p).unwrap()).unwrap();
+        assert_eq!(again, p, "the palette gets the profile as TOML");
+        let bad = Profile::parse(&format!(
+            "{base}[[command]]\nname = \"t\"\nkeys = \"t\"\nrun = [\"x\"]\n"
+        ))
+        .unwrap_err();
+        assert!(bad.contains("no [chords] leader"), "{bad}");
     }
 
     #[test]

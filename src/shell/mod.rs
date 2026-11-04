@@ -1,10 +1,12 @@
 //! The live side of a rice: things that cannot be written once to a file or the registry and
 //! must be held while noren runs: window rules (`[[window]]` in a profile), named states for
-//! state-colored borders, focus dimming (`[focus]`) and the x-ray hold key (`[xray]`).
+//! state-colored borders, focus dimming (`[focus]`), the x-ray hold key (`[xray]`), and
+//! commands on leader-key chords and hot corners (`[[command]]`, see [`command`]).
 //!
 //! Nothing here is persistent. `noren run` applies the rules to every window, follows new
 //! windows and state changes, and on exit puts every touched window back as it was.
 
+pub mod command;
 pub mod focus;
 pub mod keys;
 pub mod rules;
@@ -15,6 +17,7 @@ mod win;
 use std::io;
 use std::path::PathBuf;
 
+pub use command::{Action, Command, Commands};
 pub use focus::{Focus, Xray};
 pub use rules::{Rules, Style, WindowInfo, WindowRule};
 pub use state::State;
@@ -31,6 +34,9 @@ pub struct Live {
     pub rules: Rules,
     pub focus: Option<Focus>,
     pub xray: Option<Xray>,
+    pub commands: Commands,
+    /// The profile as TOML, handed to the command palette.
+    pub source: String,
 }
 
 impl Live {
@@ -39,9 +45,14 @@ impl Live {
             rules: Rules::new(&profile.window)?,
             focus: profile.focus.as_ref().map(Focus::new).transpose()?,
             xray: profile.xray.as_ref().map(Xray::new).transpose()?,
+            commands: profile.commands()?,
+            source: toml::to_string(profile).map_err(|e| e.to_string())?,
         };
-        if live.rules.is_empty() && live.focus.is_none() && live.xray.is_none() {
-            return Err("the profile has no [[window]] rules, [focus] or [xray], nothing to run".into());
+        if live.rules.is_empty() && live.focus.is_none() && live.xray.is_none() && !live.commands.bound() {
+            return Err(
+                "the profile has no [[window]] rules, [focus], [xray], chords or hot corners, nothing to run"
+                    .into(),
+            );
         }
         Ok(live)
     }

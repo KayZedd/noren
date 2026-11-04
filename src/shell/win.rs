@@ -2,8 +2,8 @@
 //! `DwmSetWindowAttribute`, and undoes everything on exit.
 //!
 //! New windows, title changes and focus changes arrive through out-of-context
-//! `SetWinEventHook`s, the x-ray key through a `WH_KEYBOARD_LL` hook; state files are polled
-//! twice a second. Hook callbacks only queue an event and wake the loop, so no Win32 call made
+//! `SetWinEventHook`s, the x-ray key and command chords through a `WH_KEYBOARD_LL` hook; state
+//! files are polled twice a second, the pointer every 50 ms when hot corners are set. Hook callbacks only queue an event and wake the loop, so no Win32 call made
 //! while applying a style can re-enter the runtime.
 //!
 //! Focus dimming is one layered, click-through popup over the virtual screen, kept directly
@@ -16,12 +16,13 @@ use std::io;
 use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Instant;
 
-use windows::Win32::Foundation::{COLORREF, CloseHandle, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, CloseHandle, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DWMWINDOWATTRIBUTE, DwmGetWindowAttribute, DwmSetWindowAttribute};
 use windows::Win32::Graphics::Gdi::{
     CreateSolidBrush, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HBRUSH, HDC, HMONITOR,
-    MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, MonitorFromWindow,
 };
 use windows::Win32::System::Console::SetConsoleCtrlHandler;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -35,9 +36,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EVENT_OBJECT_DESTROY,
     EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW, EVENT_SYSTEM_FOREGROUND,
     EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EnumWindows, GA_ROOT, GWL_EXSTYLE, GetAncestor,
-    GetClassNameW, GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
-    GetWindowTextW, GetWindowThreadProcessId, HC_ACTION, IsIconic, IsWindow, IsWindowVisible, IsZoomed,
-    KBDLLHOOKSTRUCT, LWA_ALPHA, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, RegisterClassW,
+    GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindowLongPtrW,
+    GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HC_ACTION, IsIconic, IsWindow, IsWindowVisible,
+    IsZoomed, KBDLLHOOKSTRUCT, LWA_ALPHA, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, RegisterClassW,
     SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SW_MAXIMIZE,
     SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetLayeredWindowAttributes, SetTimer,
     SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, WH_KEYBOARD_LL,
@@ -47,7 +48,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, PWSTR, w};
 
 use super::Live;
-use super::focus::{Focus, Xray};
+use super::command::{self, Action, Chords, Commands, HotCorners};
+use super::focus::{Focus, Xray, fullscreen};
 use super::keys::Hold;
 use super::rules::{Op, Rules, ScreenRect, Style, WindowInfo, monitor_order, ops, relocate};
 use super::state::{self, State};
@@ -65,9 +67,12 @@ const SKIP_CLASSES: [&str; 4] = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_S
 
 const WAKE: u32 = WM_APP + 1;
 const STATE_POLL_MS: u32 = 500;
+const POINTER_POLL_MS: u32 = 50;
 
 /// Queue entry from the keyboard hook: x-ray held (`1`) or released (`0`). Not a WinEvent id.
 const XRAY: u32 = 0xFFFF_0001;
+/// Queue entry from the keyboard hook: the command at this index finished its chord.
+const CHORD: u32 = 0xFFFF_0002;
 
 static LOOP_THREAD: AtomicU32 = AtomicU32::new(0);
 
@@ -75,6 +80,8 @@ thread_local! {
     static QUEUE: RefCell<Vec<(u32, isize)>> = const { RefCell::new(Vec::new()) };
     /// The x-ray key state, owned by the keyboard hook (which runs on the loop thread).
     static HOLD: RefCell<Option<Hold>> = const { RefCell::new(None) };
+    /// The chord machine, also owned by the keyboard hook.
+    static CHORDS: RefCell<Option<Chords>> = const { RefCell::new(None) };
 }
 
 fn wake() {
@@ -103,6 +110,10 @@ struct Runtime {
     xray: Option<Xray>,
     xray_on: bool,
     focus: Option<(Focus, HWND)>,
+    commands: Commands,
+    corners: Option<HotCorners>,
+    /// The profile as TOML, for the command palette.
+    source: String,
 }
 
 fn win_event_hook(event: u32) -> HWINEVENTHOOK {
@@ -136,7 +147,13 @@ pub fn hold(
     state_dir: Option<PathBuf>,
     ready: impl FnOnce(u32),
 ) -> io::Result<()> {
-    let Live { rules, focus, xray } = live;
+    let Live {
+        rules,
+        focus,
+        xray,
+        commands,
+        source,
+    } = live;
     // SAFETY: plain Win32 calls; the hook and handler only touch thread-safe statics or the
     // thread-local queue of the thread that installed them.
     unsafe {
@@ -167,16 +184,18 @@ pub fn hold(
                 .map(win_event_hook),
             );
         }
-        let keyboard = match &xray {
-            Some(x) => {
-                HOLD.with(|h| *h.borrow_mut() = Some(Hold::new(x.combo.clone())));
-                let module = GetModuleHandleW(None).map_err(io::Error::other)?;
-                Some(
-                    SetWindowsHookExW(WH_KEYBOARD_LL, Some(on_key), Some(module.into()), 0)
-                        .map_err(io::Error::other)?,
-                )
-            }
-            None => None,
+        HOLD.with(|h| *h.borrow_mut() = xray.as_ref().map(|x| Hold::new(x.combo.clone())));
+        let chords = commands.chords();
+        let chording = chords.is_some();
+        CHORDS.with(|c| *c.borrow_mut() = chords);
+        let keyboard = if xray.is_some() || chording {
+            let module = GetModuleHandleW(None).map_err(io::Error::other)?;
+            Some(
+                SetWindowsHookExW(WH_KEYBOARD_LL, Some(on_key), Some(module.into()), 0)
+                    .map_err(io::Error::other)?,
+            )
+        } else {
+            None
         };
         let watch_states = rules.uses_states() && state_dir.is_some();
         let mut rt = Runtime {
@@ -191,13 +210,23 @@ pub fn hold(
             xray,
             xray_on: false,
             focus: focus.zip(overlay),
+            corners: commands.hot_corners(),
+            commands,
+            source,
         };
         if watch_states {
             rt.states = rt.read_states();
         }
-        if watch_states || rt.xray.is_some() {
-            SetTimer(None, 0, STATE_POLL_MS, None);
-        }
+        let slow = if watch_states || rt.xray.is_some() || chording {
+            SetTimer(None, 0, STATE_POLL_MS, None)
+        } else {
+            0
+        };
+        let pointer = if rt.corners.is_some() {
+            SetTimer(None, 0, POINTER_POLL_MS, None)
+        } else {
+            0
+        };
         rt.refresh_all();
         rt.update_focus();
         eprintln!(
@@ -213,11 +242,15 @@ pub fn hold(
                 None => String::new(),
             },
         );
+        if let Some(leader) = rt.commands.leader.as_ref().filter(|_| chording) {
+            eprintln!("noren: {leader} starts a chord");
+        }
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             match msg.message {
-                WM_TIMER => {
+                WM_TIMER if pointer != 0 && msg.wParam.0 == pointer => rt.poll_pointer(),
+                WM_TIMER if slow != 0 && msg.wParam.0 == slow => {
                     if watch_states {
                         let now = rt.read_states();
                         if now != rt.states {
@@ -235,7 +268,15 @@ pub fn hold(
                         rt.set_xray(false);
                         rt.update_focus();
                     }
+                    let now = Instant::now();
+                    CHORDS.with(|c| {
+                        if let Some(c) = c.borrow_mut().as_mut() {
+                            c.verify(|vk| GetAsyncKeyState(vk as i32) < 0);
+                            c.expire(now);
+                        }
+                    });
                 }
+                WM_TIMER => {}
                 WAKE => {}
                 _ => {
                     DispatchMessageW(&msg);
@@ -248,6 +289,7 @@ pub fn hold(
                     EVENT_OBJECT_DESTROY => rt.forget(hwnd),
                     EVENT_OBJECT_SHOW | EVENT_OBJECT_NAMECHANGE => rt.refresh(HWND(hwnd as *mut c_void)),
                     XRAY => rt.set_xray(hwnd != 0),
+                    CHORD => rt.fire(hwnd as usize),
                     _ => {}
                 }
             }
@@ -320,15 +362,26 @@ unsafe extern "system" fn on_key(code: i32, wparam: WPARAM, lparam: LPARAM) -> L
         // SAFETY: for HC_ACTION, lparam points at a KBDLLHOOKSTRUCT for this call.
         let kb = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
         let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
+        let mut swallow = false;
         let step = HOLD.with(|h| h.borrow_mut().as_mut().map(|h| h.event(kb.vkCode, down)));
         if let Some(step) = step {
             if let Some(on) = step.changed {
                 QUEUE.with(|q| q.borrow_mut().push((XRAY, isize::from(on))));
                 wake();
             }
-            if step.swallow {
-                return LRESULT(1);
+            swallow |= step.swallow;
+        }
+        let now = Instant::now();
+        let step = CHORDS.with(|c| c.borrow_mut().as_mut().map(|c| c.event(kb.vkCode, down, now)));
+        if let Some(step) = step {
+            if let Some(i) = step.fired {
+                QUEUE.with(|q| q.borrow_mut().push((CHORD, i as isize)));
+                wake();
             }
+            swallow |= step.swallow;
+        }
+        if swallow {
+            return LRESULT(1);
         }
     }
     // SAFETY: passes the event on unchanged.
@@ -609,6 +662,70 @@ impl Runtime {
         known && focus.dims(&info.exe, screen_rect(r), screen_rect(mi.rcMonitor))
     }
 
+    /// Runs the command at `i` of the profile's list. Failures are reported, never fatal.
+    fn fire(&mut self, i: usize) {
+        let Some(cmd) = self.commands.list.get(i) else {
+            return;
+        };
+        let done = match &cmd.action {
+            Action::Palette => command::open_palette(&self.source, self.state_dir.as_deref()),
+            action => command::exec(action, self.state_dir.as_deref()),
+        };
+        if let Err(e) = done {
+            eprintln!("noren: command {:?}: {e}", cmd.name);
+        }
+    }
+
+    /// One hot-corner sample: where the pointer is, on which monitor, and whether a button is
+    /// held or a fullscreen window has the focus.
+    fn poll_pointer(&mut self) {
+        let mut p = POINT::default();
+        let mut mi = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: read-only queries with correctly sized out structs.
+        let known = unsafe {
+            GetCursorPos(&mut p).is_ok()
+                && GetMonitorInfoW(MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST), &mut mi).as_bool()
+        };
+        if !known {
+            return;
+        }
+        // SAFETY: GetAsyncKeyState accepts any virtual key; 1, 2 and 4 are the mouse buttons.
+        let button = [0x01, 0x02, 0x04]
+            .into_iter()
+            .any(|vk| unsafe { GetAsyncKeyState(vk) } < 0);
+        let blocked = button || self.fullscreen_foreground();
+        let fired = self
+            .corners
+            .as_mut()
+            .and_then(|c| c.tick(p.x, p.y, screen_rect(mi.rcMonitor), blocked, Instant::now()));
+        if let Some(i) = fired {
+            self.fire(i);
+        }
+    }
+
+    /// A game or video has the screen: hot corners stay quiet.
+    fn fullscreen_foreground(&mut self) -> bool {
+        // SAFETY: read-only queries on the foreground window.
+        let fg = unsafe { GetForegroundWindow() };
+        if fg.is_invalid() || self.info(fg).is_none() {
+            return false;
+        }
+        let mut r = RECT::default();
+        let mut mi = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: read-only queries with correctly sized out structs.
+        let known = unsafe {
+            GetWindowRect(fg, &mut r).is_ok()
+                && GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST), &mut mi).as_bool()
+        };
+        known && fullscreen(screen_rect(r), screen_rect(mi.rcMonitor))
+    }
+
     fn restore_all(&mut self) {
         for (hwnd, mut applied) in std::mem::take(&mut self.applied) {
             apply(HWND(hwnd as *mut c_void), &mut applied, &Style::default());
@@ -716,6 +833,9 @@ pub fn list() -> Vec<WindowInfo> {
         xray: None,
         xray_on: false,
         focus: None,
+        commands: Commands::new(&[], None, None).expect("no commands are valid"),
+        corners: None,
+        source: String::new(),
     };
     top_level_windows()
         .into_iter()

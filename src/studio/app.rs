@@ -16,10 +16,12 @@ use super::glass::{
 use super::model::{
     KANAGAWA, Lang, NEW_PROFILE, Page, Settings, ToastKind, Toasts, ago, default_spec, icon_rgba, set_palette,
 };
+use super::palette::{Item, Outcome, PaletteUi};
 use crate::Color;
 use crate::anim::{Animated, ease_out_cubic};
 use crate::palette::{Contrast, Mode, Palette, PaletteSpec, apca};
 use crate::rice::{self, Entry, Journal, Profile, Status, Transaction, describe};
+use crate::shell::command::{self, Action, Command};
 use crate::shell::{self, Rules, Runner, State, WindowInfo, state};
 
 impl Page {
@@ -178,6 +180,9 @@ pub struct Studio {
 
     journal: Option<Result<Vec<Transaction>, String>>,
 
+    /// The Ctrl+K command palette, while open.
+    palette: Option<PaletteUi>,
+
     #[cfg(windows)]
     tray: Option<super::tray::Tray>,
     quitting: bool,
@@ -243,6 +248,7 @@ impl Studio {
             states_polled: None,
             new_state: String::new(),
             journal: None,
+            palette: None,
             #[cfg(windows)]
             tray: None,
             quitting: false,
@@ -1412,7 +1418,7 @@ fn rollback(force: bool, l: Lang) -> (ToastKind, String) {
     }
 }
 
-fn style_text(ctx: &egui::Context) {
+pub(super) fn style_text(ctx: &egui::Context) {
     use egui::{FontFamily, FontId, TextStyle};
     ctx.all_styles_mut(|s| {
         s.text_styles = [
@@ -1551,8 +1557,19 @@ impl eframe::App for Studio {
 
         self.toasts_ui(&ctx, &th);
 
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::K)) {
+            self.palette = match self.palette {
+                Some(_) => None,
+                None => Some(PaletteUi::default()),
+            };
+        }
+        let palette_open = self.palette.is_some();
+        if palette_open {
+            self.palette_ui(&ctx, &th);
+        }
+
         // Repaint pacing: immediately while something eases, slower for the idle drift.
-        let busy = self.motion.busy() || theming || page_t < 1.0 || !self.toasts.is_empty();
+        let busy = self.motion.busy() || theming || page_t < 1.0 || !self.toasts.is_empty() || palette_open;
         if busy {
             ctx.request_repaint();
         } else if !self.settings.reduced_motion || self.runner.is_some() {
@@ -1576,7 +1593,109 @@ impl eframe::App for Studio {
     }
 }
 
+/// What a studio palette entry does.
+enum Pick {
+    Page(Page),
+    Live,
+    Save,
+    Command(Command),
+}
+
 impl Studio {
+    fn palette_entries(&self) -> Vec<(Item, Pick)> {
+        let l = self.lang();
+        let mut out = Vec::new();
+        if let Ok(p) = &self.parsed
+            && let Ok(cmds) = p.commands()
+        {
+            for c in cmds.list.iter().filter(|c| c.action != Action::Palette) {
+                out.push((Item::of(c, cmds.leader.as_ref()), Pick::Command(c.clone())));
+            }
+        }
+        let live = if self.runner.is_some() {
+            l.pick("Stop holding the profile live", "Przestań trzymać profil na żywo")
+        } else {
+            l.pick("Hold the profile live", "Trzymaj profil na żywo")
+        };
+        out.push((Item::new(live, ""), Pick::Live));
+        out.push((
+            Item::new(l.pick("Save the profile", "Zapisz profil"), "Ctrl+S"),
+            Pick::Save,
+        ));
+        for page in Page::ALL {
+            let title = format!("{} {}", l.pick("Go to", "Idź do"), page.title(l));
+            out.push((Item::new(title, ""), Pick::Page(page)));
+        }
+        out
+    }
+
+    /// The Ctrl+K overlay: the window dims, the palette drops in from above.
+    fn palette_ui(&mut self, ctx: &egui::Context, th: &Theme) {
+        let entries = self.palette_entries();
+        let items: Vec<Item> = entries
+            .iter()
+            .map(|(i, _)| Item::new(&i.title, &i.hint))
+            .collect();
+        let Some(mut pal) = self.palette.take() else {
+            return;
+        };
+        let t = pal.shown(self.settings.reduced_motion);
+        let full = ctx.content_rect();
+        let mut close = false;
+        egui::Area::new(Id::unique("palette-scrim"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(full.min)
+            .show(ctx, |ui| {
+                let (r, resp) = ui.allocate_exact_size(full.size(), Sense::click());
+                ui.painter()
+                    .rect_filled(r, 0.0, Color32::from_black_alpha((110.0 * t) as u8));
+                close |= resp.clicked();
+            });
+        let width = 600.0_f32.min(full.width() - 48.0);
+        let lang = self.lang();
+        let mut outcome = Outcome::None;
+        egui::Area::new(Id::unique("palette"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(Pos2::new(
+                full.center().x - width / 2.0,
+                full.top() + 90.0 - 16.0 * (1.0 - t),
+            ))
+            .show(ctx, |ui| {
+                ui.multiply_opacity(t);
+                ui.set_width(width);
+                glass::card(th).fill(with_alpha(th.base, 0.96)).show(ui, |ui| {
+                    ui.set_width(width - 36.0);
+                    outcome = pal.show(ui, &mut self.motion, th, &items, lang);
+                });
+            });
+        match outcome {
+            Outcome::Closed => close = true,
+            Outcome::Picked(i) => {
+                close = true;
+                match entries.into_iter().nth(i).map(|(_, p)| p) {
+                    Some(Pick::Page(p)) => self.go(p),
+                    Some(Pick::Live) => {
+                        if self.runner.is_some() {
+                            self.stop_live();
+                        } else {
+                            self.start_live();
+                        }
+                    }
+                    Some(Pick::Save) => self.save(false),
+                    Some(Pick::Command(c)) => match command::exec(&c.action, None) {
+                        Ok(()) => self.toast(ToastKind::Ok, c.name),
+                        Err(e) => self.toast(ToastKind::Error, format!("{}: {e}", c.name)),
+                    },
+                    None => {}
+                }
+            }
+            Outcome::None => {}
+        }
+        if !close {
+            self.palette = Some(pal);
+        }
+    }
+
     fn has_tray(&self) -> bool {
         #[cfg(windows)]
         {
@@ -1591,6 +1710,18 @@ impl Studio {
 
 pub fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(i) = args.iter().position(|a| a == "--palette") {
+        let Some(file) = args.get(i + 1) else {
+            eprintln!("noren-studio: --palette needs a profile file");
+            return ExitCode::from(2);
+        };
+        let state_dir = args
+            .iter()
+            .position(|a| a == "--state-dir")
+            .and_then(|i| args.get(i + 1))
+            .map(PathBuf::from);
+        return super::palette::run(file, state_dir);
+    }
     let page = match Page::from_args(&args) {
         Ok(p) => p.unwrap_or(Page::Palette),
         Err(e) => {

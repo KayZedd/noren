@@ -35,7 +35,7 @@ impl Mod {
         }
     }
 
-    fn of(vk: u32) -> Option<Self> {
+    pub(crate) fn of(vk: u32) -> Option<Self> {
         Self::ALL.into_iter().find(|m| m.vks().contains(&vk))
     }
 
@@ -73,7 +73,8 @@ const NAMED: [(&str, u32); 14] = [
     ("backspace", 0x08),
 ];
 
-fn key_vk(name: &str) -> Option<u32> {
+/// The virtual-key code for a key name: a letter or digit, `F1`..`F24`, or a named key.
+pub(crate) fn key_vk(name: &str) -> Option<u32> {
     let lower = name.to_ascii_lowercase();
     if let Some(&(_, vk)) = NAMED.iter().find(|(n, _)| *n == lower) {
         return Some(vk);
@@ -86,6 +87,15 @@ fn key_vk(name: &str) -> Option<u32> {
     }
     let n: u32 = lower.strip_prefix('f')?.parse().ok()?;
     (1..=24).contains(&n).then_some(0x70 + n - 1)
+}
+
+/// The canonical name of a virtual key, the inverse of [`key_vk`].
+pub(crate) fn key_name(vk: u32) -> String {
+    match NAMED.iter().find(|(_, v)| *v == vk) {
+        Some((n, _)) => n.to_string(),
+        None if (0x70..0x88).contains(&vk) => format!("F{}", vk - 0x6F),
+        None => char::from_u32(vk).map(String::from).unwrap_or_default(),
+    }
 }
 
 impl Combo {
@@ -122,11 +132,7 @@ impl fmt::Display for Combo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut parts: Vec<String> = self.mods.iter().map(|m| m.name().to_string()).collect();
         if let Some(vk) = self.key {
-            parts.push(match NAMED.iter().find(|(_, v)| *v == vk) {
-                Some((n, _)) => n.to_string(),
-                None if (0x70..0x88).contains(&vk) => format!("F{}", vk - 0x6F),
-                None => char::from_u32(vk).map(String::from).unwrap_or_default(),
-            });
+            parts.push(key_name(vk));
         }
         f.write_str(&parts.join("+"))
     }

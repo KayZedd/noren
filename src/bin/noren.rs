@@ -17,7 +17,11 @@ usage:
   noren apply <profile.toml>       apply as one transaction
   noren rollback [--force]         undo the newest transaction
   noren log                        list transactions
-  noren run <profile.toml>         hold [[window]] rules, [focus] and [xray] until Ctrl+C
+  noren run <profile.toml>         hold [[window]] rules, [focus], [xray], chords and hot
+                                   corners until Ctrl+C
+  noren commands <profile.toml>    list the profile's [[command]]s
+  noren commands <profile.toml> <name>
+                                   run one by name
   noren windows [<profile.toml>]   list windows, and which rules match them
   noren state                      list states
   noren state <name> <ok|fail|warn|busy|clear>
@@ -155,6 +159,41 @@ fn run(args: &[String]) -> Result<(), String> {
             let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;
             let dir = option(rest, "--state-dir").map(PathBuf::from);
             shell::run(&profile, dir).map_err(|e| e.to_string())
+        }
+        "commands" => {
+            let path = positional(rest).ok_or("missing profile path")?;
+            let profile = Profile::load(path.as_ref())?;
+            let commands = profile.commands()?;
+            let dir = option(rest, "--state-dir").map(PathBuf::from);
+            match positionals(rest)[1..] {
+                [] => {
+                    for c in &commands.list {
+                        let keys = match (&commands.leader, c.keys.is_empty()) {
+                            (Some(l), false) => format!("{l}, {}", c.keys_label()),
+                            _ => String::new(),
+                        };
+                        let corner = c.corner.map(|k| k.to_string()).unwrap_or_default();
+                        println!("{:<28} {:<24} {corner}", c.name, keys);
+                    }
+                    Ok(())
+                }
+                [name] => {
+                    let c = commands
+                        .list
+                        .iter()
+                        .find(|c| c.name.eq_ignore_ascii_case(name))
+                        .ok_or_else(|| format!("no command named {name:?}"))?;
+                    match &c.action {
+                        shell::Action::Palette => {
+                            let source = toml::to_string(&profile).map_err(|e| e.to_string())?;
+                            shell::command::open_palette(&source, dir.as_deref())
+                        }
+                        action => shell::command::exec(action, dir.as_deref()),
+                    }
+                    .map_err(|e| e.to_string())
+                }
+                _ => Err("usage: noren commands <profile.toml> [<name>]".into()),
+            }
         }
         "windows" => {
             let rules = match positional(rest) {

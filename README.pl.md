@@ -122,6 +122,37 @@ opacity = 0.2                  # 0.05 do 0.9, domyślnie 0.2
 
 `[focus]` trzyma jedną przepuszczającą kliknięcia warstwę tuż za oknem z fokusem, więc reszta przygasa, a pasek zadań zostaje jasny. Chowa się na pulpicie, przy oknach pełnoekranowych i gdy x-ray jest wciśnięty. `[xray]` robi wszystkie okna przezroczystymi, dopóki trzymasz kombinację, żeby zobaczyć pulpit albo widżet pod nimi; puszczenie oddaje każdemu oknu jego własną przezroczystość, z reguły czy bez. Ostatni klawisz kombinacji jest połykany, modyfikatory nie, a modyfikatory muszą się zgadzać dokładnie: Ctrl+Shift+Alt+Space nie odpala Ctrl+Alt+Space. Oba działają bez reguł `[[window]]` w profilu.
 
+### Komendy, akordy i gorące rogi
+
+```toml
+[chords]
+leader = "Alt+Space"           # wciśnij, puść, potem wpisz klawisze komendy
+timeout = 1.5                  # sekundy na następny klawisz, 0.3 do 10
+
+[corners]
+dwell = 0.25                   # ile sekund kursor stoi w rogu, 0 do 2
+
+[[command]]
+name = "Terminal"
+keys = "t"                     # akord po leaderze; "g s" to dwa klawisze
+run = ["wt.exe"]               # program i argumenty
+
+[[command]]
+name = "Mark build failed"
+state = "build=fail"           # ok | fail | warn | busy | clear
+
+[[command]]
+name = "noren on GitHub"
+open = "https://github.com/KayZedd/noren"   # URL, plik albo folder
+
+[[command]]
+name = "Command palette"
+corner = "top-left"            # top-left | top-right | bottom-left | bottom-right
+builtin = "palette"
+```
+
+Każda `[[command]]` ma unikalną nazwę i dokładnie jedną akcję: `run`, `open`, `state` albo `builtin = "palette"`. Wciśnij i puść leader, potem wpisz klawisze: są połykane, więc aplikacja pod spodem nic nie widzi, zły klawisz albo Esc anuluje, a modyfikatory mogą zostać wciśnięte. Żaden akord nie może być prefiksem innego. Gorący róg odpala raz na wizytę, gdy kursor postoi w jego strefie 2 px; działa per monitor i nic nie robi przy wciśniętym przycisku myszy ani gdy fokus ma aplikacja pełnoekranowa. Paleta to małe okno z wyszukiwaniem rozmytym po wszystkich komendach, z klawiszami czy bez: strzałki przesuwają, Enter uruchamia, Esc albo kliknięcie obok zamyka. W noren studio Ctrl+K otwiera tę samą paletę nad aplikacją, z komendami profilu oraz skokami do stron, zapisem i przełącznikiem trybu na żywo. `noren commands` wypisuje i uruchamia komendy z terminala.
+
 ## FAQ
 
 **Zepsuje mi ustawienia?** Przed zapisem noren zapisuje w `%LOCALAPPDATA%\noren\journal` każdą wartość, którą zaraz nadpisze. Jeśli któryś zapis się nie uda, wykonane już zapisy są cofane. `noren rollback` przywraca poprzednie bajty co do jednego. W teście end-to-end `settings.json` VS Code wrócił identyczny bajt w bajt po apply i rollback.
@@ -235,6 +266,7 @@ noren-studio                 # startuje na stronie Palette
 noren-studio --page live     # palette, profile, apply, live, windows, states, history, settings
 ```
 
+- Ctrl+K otwiera paletę komend: komendy profilu, skoki do stron, zapis i przełącznik trybu na żywo.
 - Zamknięcie okna chowa je do zasobnika; runtime na żywo działa dalej. Menu zasobnika: Otwórz, Trzymaj profil na żywo, Zakończ. Zakończ przywraca wszystkie okna i wychodzi.
 - Domyślny wygląd to Kanagawa Wave, a studio przebarwia się według palety profilu w trakcie edycji.
 - Na Windows 11 okno dostaje tło akrylowe. Ustawienia mają angielski i polski oraz przełącznik ograniczenia animacji.
@@ -250,9 +282,10 @@ noren diff <profile.toml>                            # co zmieni apply
 noren apply <profile.toml>                           # zastosuj jako jedną transakcję
 noren rollback [--force]                             # cofnij najnowszą transakcję
 noren log                                            # lista transakcji
-noren run <profile.toml>                             # trzymaj [[window]], [focus], [xray] do Ctrl+C
+noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi do Ctrl+C
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
+noren commands <profile.toml> [<nazwa>]              # lista [[command]] albo uruchom jedną
 noren <komenda> --journal <katalog>                  # dziennik w innym miejscu
 noren <komenda> --state-dir <katalog>                # stany w innym miejscu
 ```
@@ -276,7 +309,7 @@ W planach:
 - [ ] Położenie widżetów i kolor tekstu dobierane z tapety
 - [ ] Motyw zależny od pory dnia i wschodu słońca
 - [ ] Poświata krawędzi ekranu jako status
-- [ ] Akordy leader-key, paleta komend, gorące rogi
+- [x] Akordy leader-key, paleta komend, gorące rogi
 - [ ] Zamiennik Alt+Tab z żywymi miniaturami
 - [ ] Widżet multimediów z motywem z okładki
 - [ ] Przestylowane powiadomienia
@@ -284,7 +317,7 @@ W planach:
 
 ## Ograniczenia
 
-- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia. Zgłoszenia mile widziane.
+- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów i okna palety. Zgłoszenia mile widziane.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
 - `noren run` musi działać, żeby reguły okien się trzymały. Zabity bez Ctrl+C zostawia okna w swoim stylu, dopóki się nie zamkną.
@@ -323,9 +356,9 @@ Struktura:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, rampy, eksport do Terminala, VS Code, CSS, KDE, Firefoksa, akcentu Windows |
 | [src/rice/](src/rice/) | Profile, dziennik, apply i rollback, merge JSONC, magazyn rejestru i plików |
-| [src/shell/](src/shell/) | Reguły okien, stany, przyciemnianie, x-ray i runtime Win32, który je trzyma |
+| [src/shell/](src/shell/) | Reguły okien, stany, przyciemnianie, x-ray, komendy (akordy, gorące rogi) i runtime Win32, który je trzyma |
 | [src/bin/noren.rs](src/bin/noren.rs) | Wiersz poleceń |
-| [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: aplikacja egui, szklany motyw, zasobnik |
+| [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: aplikacja egui, szklany motyw, zasobnik, paleta komend |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Powierzchnie, panel, trait widżetu |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Drzewo elementów, layout, malowanie |
 | [src/host/](src/host/) | Host Win32, okno podglądu, headless symulator |

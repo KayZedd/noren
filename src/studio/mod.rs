@@ -10,6 +10,8 @@ pub mod model;
 mod app;
 #[cfg(feature = "studio")]
 mod glass;
+#[cfg(feature = "studio")]
+mod palette;
 #[cfg(all(feature = "studio", windows))]
 mod tray;
 

@@ -122,6 +122,37 @@ opacity = 0.2                  # 0.05 to 0.9, default 0.2
 
 `[focus]` keeps one click-through layer directly behind the focused window, so everything else fades and the taskbar stays bright. It hides on the desktop, for fullscreen windows and while x-ray is held. `[xray]` makes every window see-through while the combo is held, so you can read the desktop or a widget under them; release puts back each window's own opacity, rule or not. The combo's last key is swallowed while held, modifiers are not, and modifiers must match exactly: Ctrl+Shift+Alt+Space does not trigger Ctrl+Alt+Space. Both work with no `[[window]]` rules in the profile.
 
+### Commands, chords and hot corners
+
+```toml
+[chords]
+leader = "Alt+Space"           # press, release, then type a command's keys
+timeout = 1.5                  # seconds to type the next key, 0.3 to 10
+
+[corners]
+dwell = 0.25                   # seconds the pointer rests in a corner, 0 to 2
+
+[[command]]
+name = "Terminal"
+keys = "t"                     # chord after the leader; "g s" is two keys
+run = ["wt.exe"]               # program and arguments
+
+[[command]]
+name = "Mark build failed"
+state = "build=fail"           # ok | fail | warn | busy | clear
+
+[[command]]
+name = "noren on GitHub"
+open = "https://github.com/KayZedd/noren"   # a URL, file or folder
+
+[[command]]
+name = "Command palette"
+corner = "top-left"            # top-left | top-right | bottom-left | bottom-right
+builtin = "palette"
+```
+
+Each `[[command]]` has a unique name and exactly one action: `run`, `open`, `state` or `builtin = "palette"`. Press and release the leader, then type the keys: the keys are swallowed so the app under you sees nothing, wrong keys or Esc cancel, and modifiers may stay held. No chord may be a prefix of another. A hot corner fires once per visit after the pointer rests in the corner's 2 px zone; it is per monitor and does nothing while a mouse button is held or a fullscreen app has focus. The palette is a small window that fuzzy-searches every command, keys or not: arrows move, Enter runs, Esc or clicking away closes. In noren studio, Ctrl+K opens the same palette over the app, with the profile's commands plus page jumps, Save and the live toggle. `noren commands` lists and runs commands from the terminal.
+
 ## FAQ
 
 **Will it break my settings?** Before writing, noren journals every value it is about to replace in `%LOCALAPPDATA%\noren\journal`. If any write fails, the ones already done are reverted. `noren rollback` restores the previous bytes exactly. In an end-to-end run, a VS Code `settings.json` came back byte-identical after apply and rollback.
@@ -235,6 +266,7 @@ noren-studio                 # opens on the Palette page
 noren-studio --page live     # palette, profile, apply, live, windows, states, history, settings
 ```
 
+- Ctrl+K opens the command palette: the profile's commands, page jumps, Save and the live toggle.
 - Closing the window hides it to the tray; the live runtime keeps running. Tray menu: Open, Hold profile live, Quit. Quit restores every window and exits.
 - Kanagawa Wave is the default look, and the studio retints itself from the profile's palette as you edit it.
 - On Windows 11 the window gets an acrylic backdrop. Settings has English and Polish, and a Reduce motion switch.
@@ -250,9 +282,10 @@ noren diff <profile.toml>                            # what apply would change
 noren apply <profile.toml>                           # apply as one transaction
 noren rollback [--force]                             # undo the newest transaction
 noren log                                            # list transactions
-noren run <profile.toml>                             # hold [[window]], [focus], [xray] until Ctrl+C
+noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners until Ctrl+C
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
+noren commands <profile.toml> [<name>]               # list [[command]]s, or run one
 noren <command> --journal <dir>                      # journal somewhere else
 noren <command> --state-dir <dir>                    # states somewhere else
 ```
@@ -276,7 +309,7 @@ Planned:
 - [ ] Widget placement and text color picked from the wallpaper
 - [ ] Theme by time of day and sunrise
 - [ ] Ambient edge glow for status
-- [ ] Leader-key chords, command palette, hot corners
+- [x] Leader-key chords, command palette, hot corners
 - [ ] Alt+Tab replacement with live thumbnails
 - [ ] Media widget themed from the cover art
 - [ ] Restyled notifications
@@ -284,7 +317,7 @@ Planned:
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop. Reports are welcome.
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners and the palette window. Reports are welcome.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
 - `noren run` must keep running for window rules to hold. If it is killed without Ctrl+C, the windows keep their style until they close.
@@ -323,9 +356,9 @@ Layout:
 |---|---|
 | [src/palette/](src/palette/) | OKLCH, APCA, ramps, exports for Terminal, VS Code, CSS, KDE, Firefox, Windows accent |
 | [src/rice/](src/rice/) | Profiles, journal, apply and rollback, JSONC merge, registry and file store |
-| [src/shell/](src/shell/) | Window rules, states, focus dimming, x-ray, and the Win32 runtime that holds them |
+| [src/shell/](src/shell/) | Window rules, states, focus dimming, x-ray, commands (chords, hot corners), and the Win32 runtime that holds them |
 | [src/bin/noren.rs](src/bin/noren.rs) | Command line |
-| [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: egui app, glass theme, tray |
+| [src/studio/](src/studio/), [src/bin/noren-studio.rs](src/bin/noren-studio.rs) | noren studio: egui app, glass theme, tray, command palette |
 | [src/surface.rs](src/surface.rs), [src/panel/](src/panel/), [src/widget.rs](src/widget.rs) | Surfaces, the panel, the widget trait |
 | [src/element.rs](src/element.rs), [src/layout.rs](src/layout.rs), [src/render.rs](src/render.rs) | Element tree, layout, painting |
 | [src/host/](src/host/) | Win32 host, preview window, headless simulator |
