@@ -13,23 +13,22 @@ Framework w czystym Ruście: panele, widżety pulpitu, nakładki, palety i trans
 
 </div>
 
-<p align="center"><img src="docs/studio.webp" alt="noren studio: strona Palette w Kanagawa Wave" width="860"></p>
+<p align="center"><img src="docs/studio.webp" alt="noren studio: strona Palette" width="860"></p>
 
 **noren studio** to miejsce, w którym rice'ujesz. Wybierasz jeden kolor akcentu i patrzysz, jak staje się pełną paletą z tekstem o sprawdzonym kontraście. Widzisz, co się zmieni w Windowsie, Windows Terminal, VS Code i Firefoksie, stosujesz to jako jedną transakcję i cofasz jednym kliknięciem. Reguły okien, przyciemnianie, x-ray, akordy, gorące rogi i poświaty krawędzi trzymasz na żywo, a studio siedzi w zasobniku. Wiersz poleceń `noren` robi to samo ze skryptów i CI.
 
-- **Aplikacja do zarządzania, a nie szukanie po configach.** Szklane panele, płynne animacje, domyślnie Kanagawa Wave, przebarwiane na żywo z Twojej palety. Ctrl+K znajduje każdą stronę i komendę.
-- **Jeden akcent, wszystkie aplikacje.** Rampy OKLCH, których tekst przechodzi kontrast APCA, w trybie ciemnym i jasnym.
-- **Transakcyjnie.** Każdy zapis trafia do dziennika razem z poprzednimi bajtami, zanim się wykona. Nieudane apply cofa się samo.
-- **Twoje zmiany przetrwają.** Konfiguracje JSON zachowują komentarze i kolejność kluczy. Rollback pomija to, co zmieniłeś po apply.
-- **Rice to plik.** `profile.toml` można wersjonować, porównywać i udostępniać.
-- **Prawdziwe powierzchnie pulpitu.** Okna z kanałem alfa per piksel, przepuszczające kliknięcia, na warstwie pulpitu, jako AppBar albo na wierzchu.
-- **Czysty Rust, MIT do samego dna.** Bez klauzuli atrybucji Slinta, bez runtime'u XAML, bez webview.
+- **Paleta z jednego koloru.** Rampy OKLCH dla trybu ciemnego i jasnego, z tekstem dociąganym, aż przejdzie kontrast APCA.
+- **Bezpieczne zastosowanie i cofanie.** Każdy zapis trafia do dziennika razem z bajtami, które zastępuje. Nieudane apply cofa się samo.
+- **Twoje zmiany zostają.** Konfiguracje JSON zachowują komentarze i kolejność kluczy. Rollback nie rusza tego, co zmieniłeś po apply.
+- **Profile to pliki TOML.** Trzymasz je w git, porównujesz i udostępniasz.
+- **Powierzchnie pulpitu.** Panele, widżety i nakładki jako przezroczyste okna przepuszczające kliknięcia: na warstwie pulpitu, jako AppBar albo nad wszystkim.
+- **Tylko Rust.** Licencja MIT, bez webview, bez runtime'u XAML.
 
 ## noren studio
 
 | Strona | Co robi |
 |---|---|
-| Palette | Akcent z presetami Kanagawa Wave, tryb ciemny lub jasny, wysoki kontrast, rampy na żywo, kontrola APCA, podgląd |
+| Palette | Akcent z presetami Aizome, tryb ciemny lub jasny, wysoki kontrast, rampy na żywo, kontrola APCA, podgląd |
 | Profile | Profil jako TOML, sprawdzany w trakcie pisania |
 | Apply | Diff, zastosowanie jako jedna transakcja, rollback |
 | Live | Trzymanie reguł okien, przyciemniania, x-ray, akordów, gorących rogów i poświat; opcjonalnie od startu |
@@ -46,7 +45,8 @@ noren-studio --page live     # palette, profile, apply, live, windows, states, h
 
 - Ctrl+K otwiera paletę komend: komendy profilu, skoki do stron, zapis i przełącznik trybu na żywo.
 - Zamknięcie okna chowa je do zasobnika; runtime na żywo działa dalej. Menu zasobnika: Otwórz, Trzymaj profil na żywo, Zakończ. Zakończ przywraca wszystkie okna i wychodzi.
-- Domyślny wygląd to Kanagawa Wave, a studio przebarwia się według palety profilu w trakcie edycji.
+- Szklane panele i płynne animacje. Domyślny wygląd to Aizome, własna indygowa paleta noren, a studio przebarwia się według palety profilu w trakcie edycji.
+- Przełączenie trybu ciemnego i jasnego rozlewa nowe tło po oknie od przełącznika, a ikony księżyca i słońca się animują.
 - Na Windows 11 okno dostaje tło akrylowe.
 - Ustawienia są w `%LOCALAPPDATA%\noren\studio.json`.
 - CLI nie potrzebuje funkcji `studio`.
@@ -80,15 +80,15 @@ Te same kroki, dla skryptów i CI. `cargo install --path .` daje `noren` w `PATH
 
 1. Podejrzyj paletę:
    ```sh
-   noren palette '#7e9cd8'
+   noren palette '#7d97d4'
    ```
-2. Napisz `kanagawa.toml`:
+2. Napisz `my-rice.toml`:
    ```toml
    schema = 1
-   name = "kanagawa"
+   name = "my-rice"
 
    [palette]
-   accent = "#7e9cd8"
+   accent = "#7d97d4"
    mode = "dark"            # dark | light
    contrast = "standard"    # standard | high
 
@@ -100,8 +100,8 @@ Te same kroki, dla skryptów i CI. `cargo install --path .` daje `noren` w `PATH
    ```
 3. Zobacz, co się zmieni, i zastosuj:
    ```sh
-   noren diff kanagawa.toml
-   noren apply kanagawa.toml
+   noren diff my-rice.toml
+   noren apply my-rice.toml
    ```
 4. Cofnij:
    ```sh
@@ -127,13 +127,13 @@ border = "state:build"         # podąża za `noren state build ...`
 title = "*Visual Studio Code"
 border = "accent"              # accent | neutral | positive | warning | negative, ".N" wybiera krok
 caption = "neutral.2"
-title_text = "#dcd7ba"         # też: default, none
+title_text = "#ddd6be"         # też: default, none
 dark = true
 opacity = 0.95                 # od 0.1 do 1.0
 monitor = 2                    # 1 = główny, potem od lewej; przenoszone raz, gdy okno się pojawi
 ```
 
-Późniejsze reguły nadpisują wcześniejsze pole po polu. `noren windows kanagawa.toml` wypisuje każde okno z exe, klasą i tytułem oraz które reguły do niego pasują.
+Późniejsze reguły nadpisują wcześniejsze pole po polu. `noren windows my-rice.toml` wypisuje każde okno z exe, klasą i tytułem oraz które reguły do niego pasują.
 
 ### Ramki w kolorze stanu
 
@@ -220,7 +220,7 @@ Cienki pasek światła wzdłuż krawędzi ekranu pokazuje stan bez żadnego okna
 
 **Potrzebuje uprawnień administratora?** Nie. Pisze tylko do `HKCU` i do plików w Twoim profilu. Wyjątek to okna uruchomione jako administrator: Windows nie pozwala zwykłemu procesowi ich przestylować, więc `noren run` je pomija, chyba że też działa z podniesionymi uprawnieniami.
 
-**Czemu nie Slint, egui, iced albo WinUI?** Licencja royalty-free Slinta wymaga atrybucji w dostarczanej aplikacji. egui i iced są zbudowane wokół jednego okna aplikacji, a okna warstwowe, przepuszczające kliknięcia, AppBar i okna na warstwie pulpitu walczą z ich pętlą zdarzeń. WinUI nie jest Rust-first i ciągnie ciężki runtime. noren studio to zwykłe okno aplikacji, więc używa egui; powierzchnie pulpitu nie.
+**Na czym zbudowany jest interfejs?** noren studio to zwykłe okno aplikacji w egui. Panele, widżety i nakładki używają własnego stosu noren (layout taffy, tiny-skia, cosmic-text) na warstwowych oknach Win32, bo potrzebują alfy per piksel, przepuszczania kliknięć, AppBar i warstwy pulpitu, czego biblioteki okien aplikacji nie obsługują.
 
 **Linux albo macOS?** Silnik palet, logika profili i dziennika oraz cały stos UI działają i są testowane na Linuksie. Cele plikowe też tam działają. Cele rejestru i natywny host są tylko na Windows. Feature `preview` otwiera okno deweloperskie na każdym systemie.
 
@@ -287,7 +287,7 @@ Górny panel:
 use noren::host::{self, Entry, SurfaceOptions};
 use noren::{Panel, PanelConfig, Theme};
 
-let mut panel = Panel::new(PanelConfig::default(), Theme::kanagawa_wave());
+let mut panel = Panel::new(PanelConfig::default(), Theme::aizome());
 panel.add(MyWidget::new()); // impl Widget
 host::run(vec![Entry::new(panel, SurfaceOptions::panel())])?;
 ```
@@ -299,7 +299,7 @@ use noren::surface::{Anchor, FloatingConfig, Layer};
 use noren::Floating;
 
 let config = FloatingConfig { anchor: Anchor::BottomRight, layer: Layer::Desktop, ..Default::default() };
-let clock = Floating::new(Clock::default(), config, Theme::kanagawa_wave()); // impl View
+let clock = Floating::new(Clock::default(), config, Theme::aizome()); // impl View
 host::run(vec![Entry::new(clock, SurfaceOptions::default())])?;
 ```
 
@@ -364,7 +364,7 @@ W planach:
 - **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety i poświat krawędzi. Zgłoszenia mile widziane.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
-- Poświaty to okna topmost, ale pasek zadań i tak może rysować się nad poświatą na swojej krawędzi. Poświaty nie były jeszcze testowane na prawdziwym sprzęcie.
+- Poświaty to okna topmost, ale pasek zadań i tak może rysować się nad poświatą na swojej krawędzi.
 - `noren run` musi działać, żeby reguły okien się trzymały. Zabity bez Ctrl+C zostawia okna w swoim stylu, dopóki się nie zamkną.
 - Firefox ignoruje `userChrome.css` do restartu. VS Code i Windows Terminal przeładowują się same.
 - Rollback usuwa pliki utworzone przez noren, ale zostawia pusty folder `chrome` Firefoksa.
@@ -419,7 +419,7 @@ Struktura:
 
 ## Wesprzyj projekt
 
-Jeśli dzięki noren pulpit jest wreszcie Twój, ⭐ pomaga innym go znaleźć. Zgłoszenia błędów z prawdziwych maszyn z Windowsem pomagają jeszcze bardziej.
+⭐ pomaga innym znaleźć noren. Zgłoszenia błędów z prawdziwych maszyn z Windowsem pomagają jeszcze bardziej.
 
 ## Licencja
 

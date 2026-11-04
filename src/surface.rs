@@ -428,7 +428,7 @@ mod tests {
             offset: (5.0, 5.0),
             ..FloatingConfig::default()
         };
-        let mut s = Floating::with_text(Clicker(0), config, Theme::kanagawa_wave(), text);
+        let mut s = Floating::with_text(Clicker(0), config, Theme::aizome(), text);
         s.set_monitor(MonitorInfo {
             width: 200.0,
             height: 100.0,

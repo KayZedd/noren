@@ -204,7 +204,7 @@ mod tests {
         Box::new(Floating::with_text(
             Square(0, color),
             config,
-            Theme::kanagawa_wave(),
+            Theme::aizome(),
             TextSystem::from_font_data(Vec::new(), &[]),
         ))
     }

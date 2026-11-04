@@ -54,7 +54,7 @@ impl Widget for Probe {
 fn panel() -> (Panel, Instant) {
     let mut p = Panel::with_text(
         PanelConfig::default(),
-        Theme::kanagawa_wave(),
+        Theme::aizome(),
         TextSystem::from_font_data(Vec::new(), &[]),
     );
     p.add(Probe {

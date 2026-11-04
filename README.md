@@ -13,23 +13,22 @@ English | [Polski](README.pl.md)
 
 </div>
 
-<p align="center"><img src="docs/studio.webp" alt="noren studio: the Palette page in Kanagawa Wave" width="860"></p>
+<p align="center"><img src="docs/studio.webp" alt="noren studio: the Palette page" width="860"></p>
 
 **noren studio** is where you rice. Pick one accent color and watch it become a full palette with contrast-checked text. See what will change in Windows, Windows Terminal, VS Code and Firefox, apply it as one transaction, and roll it back with one click. Hold window rules, focus dimming, x-ray, chords, hot corners and edge glows live while the studio sits in the tray. The `noren` command line does the same from scripts and CI.
 
-- **A management app, not a config hunt.** Glass panels, smooth motion, Kanagawa Wave by default, retinted live from your palette. Ctrl+K finds any page or command.
-- **One accent, every app.** OKLCH ramps whose text passes APCA contrast, in dark and light mode.
-- **Transactional.** Each write is journaled with the previous bytes before it happens. A failed apply undoes itself.
-- **Your edits survive.** JSON configs keep their comments and key order. Rollback skips anything you changed after the apply.
-- **A rice is a file.** `profile.toml` is versioned, diffable and shareable.
-- **Real desktop surfaces.** Per-pixel-alpha windows that let clicks through, on the desktop layer, as an AppBar or on top.
-- **Pure Rust, MIT all the way down.** No Slint attribution clause, no XAML runtime, no webview.
+- **A palette from one color.** OKLCH ramps for dark and light mode, with text pushed until it passes APCA contrast.
+- **Apply and undo safely.** Every write is journaled with the bytes it replaces. A failed apply reverts itself.
+- **Your edits are kept.** JSON configs keep their comments and key order. Rollback leaves alone anything you changed after the apply.
+- **Profiles are TOML files.** Keep them in git, diff them, share them.
+- **Desktop surfaces.** Panels, widgets and overlays as transparent, click-through windows: on the desktop layer, as an AppBar or above everything.
+- **Rust only.** MIT licensed, no webview, no XAML runtime.
 
 ## noren studio
 
 | Page | What it does |
 |---|---|
-| Palette | Accent with Kanagawa Wave presets, dark or light, high contrast, live ramps, APCA checks, a preview |
+| Palette | Accent with Aizome presets, dark or light, high contrast, live ramps, APCA checks, a preview |
 | Profile | The profile as TOML, checked as you type |
 | Apply | The diff, apply as one transaction, roll back |
 | Live | Hold window rules, focus dimming, x-ray, chords, hot corners and edge glows; optionally on start |
@@ -46,7 +45,8 @@ noren-studio --page live     # palette, profile, apply, live, windows, states, h
 
 - Ctrl+K opens the command palette: the profile's commands, page jumps, Save and the live toggle.
 - Closing the window hides it to the tray; the live runtime keeps running. Tray menu: Open, Hold profile live, Quit. Quit restores every window and exits.
-- Kanagawa Wave is the default look, and the studio retints itself from the profile's palette as you edit it.
+- Glass panels and eased motion. The default look is Aizome, noren's own indigo palette, and the studio recolors itself from the profile's palette as you edit it.
+- Switching between dark and light spreads the new background across the window from the switch, and its moon and sun icons animate.
 - On Windows 11 the window gets an acrylic backdrop.
 - Settings live in `%LOCALAPPDATA%\noren\studio.json`.
 - The CLI does not need the `studio` feature.
@@ -80,15 +80,15 @@ The same steps, for scripts and CI. `cargo install --path .` puts `noren` on you
 
 1. Preview a palette:
    ```sh
-   noren palette '#7e9cd8'
+   noren palette '#7d97d4'
    ```
-2. Write `kanagawa.toml`:
+2. Write `my-rice.toml`:
    ```toml
    schema = 1
-   name = "kanagawa"
+   name = "my-rice"
 
    [palette]
-   accent = "#7e9cd8"
+   accent = "#7d97d4"
    mode = "dark"            # dark | light
    contrast = "standard"    # standard | high
 
@@ -100,8 +100,8 @@ The same steps, for scripts and CI. `cargo install --path .` puts `noren` on you
    ```
 3. See what would change, then apply:
    ```sh
-   noren diff kanagawa.toml
-   noren apply kanagawa.toml
+   noren diff my-rice.toml
+   noren apply my-rice.toml
    ```
 4. Undo it:
    ```sh
@@ -127,13 +127,13 @@ border = "state:build"         # follows `noren state build ...`
 title = "*Visual Studio Code"
 border = "accent"              # accent | neutral | positive | warning | negative, ".N" picks a step
 caption = "neutral.2"
-title_text = "#dcd7ba"         # also: default, none
+title_text = "#ddd6be"         # also: default, none
 dark = true
 opacity = 0.95                 # 0.1 to 1.0
 monitor = 2                    # 1 = primary, then left to right; moved once, when it appears
 ```
 
-Later rules override earlier ones field by field. `noren windows kanagawa.toml` lists every window with its exe, class and title, and which rules match it.
+Later rules override earlier ones field by field. `noren windows my-rice.toml` lists every window with its exe, class and title, and which rules match it.
 
 ### State-colored borders
 
@@ -220,7 +220,7 @@ A thin band of light along a screen edge shows a state without a window: green w
 
 **Does it need admin rights?** No. It writes only to `HKCU` and to files in your profile. Windows running as administrator are the exception: Windows does not let a normal process restyle them, so `noren run` skips them unless it runs elevated too.
 
-**Why not Slint, egui, iced or WinUI?** Slint's royalty-free license requires attribution in the shipped app. egui and iced are built around a single application window, and layered, click-through, AppBar and desktop-layer windows fight their event loop. WinUI is not Rust-first and brings a heavy runtime. noren studio is an ordinary app window, so it does use egui; the desktop surfaces do not.
+**What is the UI built with?** noren studio is an ordinary app window built with egui. Panels, widgets and overlays use noren's own stack (taffy layout, tiny-skia, cosmic-text) on layered Win32 windows, because they need per-pixel alpha, click-through, AppBar and desktop-layer placement, which app-window toolkits do not handle.
 
 **Linux or macOS?** The palette engine, the profile and journal logic, and the whole UI stack run and are tested on Linux. File targets work there too. Registry targets and the native host are Windows only. The `preview` feature opens a dev window on any OS.
 
@@ -287,7 +287,7 @@ A top panel:
 use noren::host::{self, Entry, SurfaceOptions};
 use noren::{Panel, PanelConfig, Theme};
 
-let mut panel = Panel::new(PanelConfig::default(), Theme::kanagawa_wave());
+let mut panel = Panel::new(PanelConfig::default(), Theme::aizome());
 panel.add(MyWidget::new()); // impl Widget
 host::run(vec![Entry::new(panel, SurfaceOptions::panel())])?;
 ```
@@ -299,7 +299,7 @@ use noren::surface::{Anchor, FloatingConfig, Layer};
 use noren::Floating;
 
 let config = FloatingConfig { anchor: Anchor::BottomRight, layer: Layer::Desktop, ..Default::default() };
-let clock = Floating::new(Clock::default(), config, Theme::kanagawa_wave()); // impl View
+let clock = Floating::new(Clock::default(), config, Theme::aizome()); // impl View
 host::run(vec![Entry::new(clock, SurfaceOptions::default())])?;
 ```
 
@@ -364,7 +364,7 @@ Planned:
 - **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window and edge glows. Reports are welcome.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
-- Edge glows are topmost windows, but the taskbar can still draw over a glow on its edge. Glows have not been tried on real hardware yet.
+- Edge glows are topmost windows, but the taskbar can still draw over a glow on its edge.
 - `noren run` must keep running for window rules to hold. If it is killed without Ctrl+C, the windows keep their style until they close.
 - Firefox ignores `userChrome.css` until it restarts. VS Code and Windows Terminal reload on their own.
 - Rollback removes the files noren created but leaves an empty Firefox `chrome` folder behind.
@@ -419,7 +419,7 @@ Layout:
 
 ## Support the project
 
-If noren made your desktop yours, a ⭐ helps other people find it. Bug reports from real Windows machines help even more.
+A ⭐ helps other people find noren. Bug reports from real Windows machines help more.
 
 ## License
 

@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn erased_messages_route_back_to_the_typed_widget() {
-        let theme = Theme::kanagawa_wave();
+        let theme = Theme::aizome();
         let now = Instant::now();
         let ctx = Context {
             theme: &theme,

@@ -583,7 +583,7 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1))?;
-    let theme = Theme::kanagawa_wave();
+    let theme = Theme::aizome();
     let wallpaper = theme.alternate_background;
     let mut panel = Panel::new(PanelConfig::default(), theme);
     panel.add(Pulse::new(Config {

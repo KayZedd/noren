@@ -11,20 +11,20 @@ use crate::Color;
 use crate::palette::{Contrast, Mode, Oklch, Palette, PaletteSpec};
 use crate::rice::Profile;
 
-/// Kanagawa Wave's crystalBlue: the studio's look when no profile is open, and the accent of
-/// a new profile.
-pub const KANAGAWA_ACCENT: &str = "#7e9cd8";
+/// Aizome's indigo: the studio's look when no profile is open, and the accent of a new
+/// profile.
+pub const DEFAULT_ACCENT: &str = "#7d97d4";
 
 pub fn default_spec() -> PaletteSpec {
-    PaletteSpec::new(Color::from_hex(KANAGAWA_ACCENT).expect("valid hex"))
+    PaletteSpec::new(Color::from_hex(DEFAULT_ACCENT).expect("valid hex"))
 }
 
-/// Starting point for "New profile": the Kanagawa Wave palette and one gentle window rule.
+/// Starting point for "New profile": the Aizome palette and one gentle window rule.
 pub const NEW_PROFILE: &str = r##"schema = 1
-name = "kanagawa-wave"
+name = "my-rice"
 
 [palette]
-accent = "#7e9cd8"   # crystalBlue
+accent = "#7d97d4"   # every other color is derived from this one
 mode = "dark"
 contrast = "standard"
 
@@ -147,7 +147,7 @@ pub fn set_palette(text: &str, spec: &PaletteSpec) -> Result<String, String> {
 }
 
 /// Background aurora: the accent and three hue-shifted companions, softened. With the
-/// Kanagawa accent they land near oniViolet, springBlue and waveAqua.
+/// default accent they land near Aizome's fuji, sora and asagi.
 pub fn aurora(p: &Palette) -> [Color; 4] {
     let seed = p.accent.step(9).to_oklch();
     let dark = p.spec.mode == Mode::Dark;
@@ -266,16 +266,17 @@ impl Page {
     }
 }
 
-/// Kanagawa Wave accents offered as one-click presets.
-pub const KANAGAWA: [(&str, &str); 8] = [
-    ("crystalBlue", "#7e9cd8"),
-    ("oniViolet", "#957fb8"),
-    ("springBlue", "#7fb4ca"),
-    ("waveAqua2", "#7aa89f"),
-    ("springGreen", "#98bb6c"),
-    ("carpYellow", "#e6c384"),
-    ("sakuraPink", "#d27e99"),
-    ("autumnRed", "#c34043"),
+/// Aizome, noren's own palette: accents named after Japanese dyes, offered as one-click
+/// presets.
+pub const AIZOME: [(&str, &str); 8] = [
+    ("ai, indigo", "#7d97d4"),
+    ("fuji, wisteria", "#9884bd"),
+    ("sora, sky", "#7db1c9"),
+    ("asagi, pale teal", "#77a89c"),
+    ("matcha", "#9bb96f"),
+    ("yamabuki, kerria gold", "#e2c187"),
+    ("sakura", "#d3829b"),
+    ("shu, vermilion", "#c84f48"),
 ];
 
 /// "5 min ago" for a journal entry written at `then` (Unix seconds).
@@ -406,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn new_profile_template_is_a_valid_kanagawa_profile() {
+    fn new_profile_template_is_a_valid_default_profile() {
         let p = Profile::parse(NEW_PROFILE).unwrap();
         assert_eq!(p.palette, default_spec());
         assert_eq!(p.window.len(), 1);
@@ -420,7 +421,10 @@ mod tests {
             ..PaletteSpec::new(Color::from_hex("#957fb8").unwrap())
         };
         let out = set_palette(NEW_PROFILE, &spec).unwrap();
-        assert!(out.contains("accent = \"#957fb8\"   # crystalBlue"), "{out}");
+        assert!(
+            out.contains("accent = \"#957fb8\"   # every other color is derived from this one"),
+            "{out}"
+        );
         assert!(out.contains("mode = \"light\""));
         assert!(out.contains("contrast = \"high\""));
         assert!(out.contains("# [xray]") && out.contains("[[window]]"));
@@ -442,7 +446,7 @@ mod tests {
         let path = temp("settings").join("studio.json");
         assert_eq!(Settings::load(&path), Settings::default());
         let s = Settings {
-            profile: Some("C:/rice/kanagawa.toml".into()),
+            profile: Some("C:/rice/my-rice.toml".into()),
             lang: Lang::Pl,
             reduced_motion: true,
             live_on_start: true,
@@ -456,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn kanagawa_aurora_leans_toward_wave_hues() {
+    fn default_aurora_leans_toward_aizome_hues() {
         let p = Palette::generate(&default_spec());
         let [a, b, c, d] = aurora(&p).map(|c| c.to_oklch().h);
         let near = |h: f32, want: &str| {
@@ -464,10 +468,10 @@ mod tests {
             let d = (h - w).rem_euclid(360.0);
             d.min(360.0 - d) < 25.0
         };
-        assert!(near(a, KANAGAWA_ACCENT));
-        assert!(near(b, "#957fb8"), "oniViolet, got {b}");
-        assert!(near(c, "#7fb4ca"), "springBlue, got {c}");
-        assert!(near(d, "#7aa89f"), "waveAqua2, got {d}");
+        assert!(near(a, DEFAULT_ACCENT));
+        assert!(near(b, AIZOME[1].1), "fuji, got {b}");
+        assert!(near(c, AIZOME[2].1), "sora, got {c}");
+        assert!(near(d, AIZOME[3].1), "asagi, got {d}");
     }
 
     #[test]
@@ -492,10 +496,10 @@ mod tests {
     }
     #[test]
     fn presets_parse_and_time_reads_naturally() {
-        for (name, hex) in KANAGAWA {
+        for (name, hex) in AIZOME {
             assert!(Color::from_hex(hex).is_some(), "{name}");
         }
-        assert_eq!(KANAGAWA[0].1, KANAGAWA_ACCENT);
+        assert_eq!(AIZOME[0].1, DEFAULT_ACCENT);
         assert_eq!(ago(100, 100, Lang::En), "just now");
         assert_eq!(
             ago(100, 200, Lang::En),

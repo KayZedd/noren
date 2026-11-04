@@ -15,7 +15,7 @@ use super::glass::{
     with_alpha,
 };
 use super::model::{
-    KANAGAWA, Lang, NEW_PROFILE, Page, Settings, ToastKind, Toasts, ago, default_spec, icon_rgba, set_palette,
+    AIZOME, Lang, NEW_PROFILE, Page, Settings, ToastKind, Toasts, ago, default_spec, icon_rgba, set_palette,
 };
 use super::palette::{Item, Outcome, PaletteUi};
 use crate::Color;
@@ -673,9 +673,9 @@ impl Studio {
                     }
                 });
                 ui.add_space(8.0);
-                ui.label(RichText::new("Kanagawa Wave").size(12.5).color(th.dim));
+                ui.label(RichText::new("Aizome").size(12.5).color(th.dim));
                 ui.horizontal_wrapped(|ui| {
-                    for (name, hex) in KANAGAWA {
+                    for (name, hex) in AIZOME {
                         let c = Color::from_hex(hex).expect("preset");
                         let (rect, resp) = ui.allocate_exact_size(Vec2::splat(30.0), Sense::click());
                         let hover = self
@@ -841,7 +841,7 @@ impl Studio {
                     .show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
                         ui.label(
-                            RichText::new("~/rice $ noren apply kanagawa.toml")
+                            RichText::new("~/rice $ noren apply my-rice.toml")
                                 .monospace()
                                 .color(c32(p.neutral.step(12))),
                         );

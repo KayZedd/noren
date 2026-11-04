@@ -3,10 +3,10 @@
 //!
 //! ```toml
 //! schema = 1
-//! name = "kanagawa"
+//! name = "my-rice"
 //!
 //! [palette]
-//! accent = "#7e9cd8"
+//! accent = "#7d97d4"
 //! mode = "dark"            # dark | light
 //! contrast = "standard"    # standard | high
 //!
@@ -318,7 +318,7 @@ mod tests {
 
     const FULL: &str = r##"
 schema = 1
-name = "kanagawa"
+name = "my-rice"
 
 [palette]
 accent = "#7e9cd8"

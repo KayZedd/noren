@@ -73,18 +73,19 @@ impl Theme {
         }
     }
 
-    /// Kanagawa Wave color scheme with accent `#7e9cd8`.
-    pub fn kanagawa_wave() -> Self {
+    /// Aizome, noren's default: indigo night with warm paper text, accent `#7d97d4`. Named
+    /// after the indigo dye of traditional noren curtains.
+    pub fn aizome() -> Self {
         Self {
-            text: Color::rgb8(220, 215, 186),
-            inactive_text: Color::rgb8(84, 84, 109),
-            background: Color::rgb8(31, 31, 40),
-            alternate_background: Color::rgb8(22, 22, 29),
-            header_background: Color::rgb8(22, 22, 29),
-            highlight: Color::rgb8(126, 156, 216),
-            positive: Color::rgb8(152, 187, 108),
-            neutral: Color::rgb8(220, 165, 97),
-            negative: Color::rgb8(195, 64, 67),
+            text: Color::rgb8(221, 214, 190),
+            inactive_text: Color::rgb8(86, 86, 112),
+            background: Color::rgb8(30, 31, 41),
+            alternate_background: Color::rgb8(21, 22, 30),
+            header_background: Color::rgb8(21, 22, 30),
+            highlight: Color::rgb8(125, 151, 212),
+            positive: Color::rgb8(155, 185, 111),
+            neutral: Color::rgb8(222, 166, 100),
+            negative: Color::rgb8(200, 79, 72),
             ..Self::breeze_dark()
         }
     }
@@ -229,13 +230,12 @@ smallestReadableFont=Inter,9,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
     #[test]
     fn kdeglobals_maps_window_palette_accent_and_fonts() {
         let theme = Theme::from_kdeglobals(SAMPLE).unwrap();
-        let kanagawa = Theme::kanagawa_wave();
-        assert_eq!(theme.background, kanagawa.background);
-        assert_eq!(theme.alternate_background, kanagawa.alternate_background);
-        assert_eq!(theme.text, kanagawa.text);
+        assert_eq!(theme.background, Color::rgb8(31, 31, 40));
+        assert_eq!(theme.alternate_background, Color::rgb8(22, 22, 29));
+        assert_eq!(theme.text, Color::rgb8(220, 215, 186));
         assert_eq!(theme.highlight, Color::rgb8(126, 156, 216));
-        assert_eq!(theme.negative, kanagawa.negative);
-        assert_eq!(theme.header_background, kanagawa.alternate_background);
+        assert_eq!(theme.negative, Color::rgb8(195, 64, 67));
+        assert_eq!(theme.header_background, Color::rgb8(22, 22, 29));
         assert_eq!(theme.font_families[0], "Inter");
         assert_eq!(theme.font_point_size, 11.0);
         assert_eq!(theme.small_font_point_size, 9.0);

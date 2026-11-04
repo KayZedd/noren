@@ -14,7 +14,7 @@
 //! title = "*- Visual Studio Code"
 //! border = "accent"            # accent | neutral | positive | warning | negative, ".N" for a step
 //! caption = "neutral.2"
-//! title_text = "#dcd7ba"
+//! title_text = "#ddd6be"
 //! dark = true
 //! opacity = 0.95
 //! monitor = 2                  # 1 = primary, then left to right; moved once, when first seen
