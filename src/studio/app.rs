@@ -11,14 +11,15 @@ use eframe::egui::{
 };
 
 use super::glass::{
-    self, Motion, Theme, accent_button, c32, chip, glass, pulse_dot, segmented, toggle, with_alpha,
+    self, Motion, Theme, accent_button, c32, chip, glass, mode_switch, pulse_dot, segmented, toggle,
+    with_alpha,
 };
 use super::model::{
     KANAGAWA, Lang, NEW_PROFILE, Page, Settings, ToastKind, Toasts, ago, default_spec, icon_rgba, set_palette,
 };
 use super::palette::{Item, Outcome, PaletteUi};
 use crate::Color;
-use crate::anim::{Animated, ease_out_cubic};
+use crate::anim::{ease_in_out, ease_out_cubic};
 use crate::palette::{Contrast, Mode, Palette, PaletteSpec, apca};
 use crate::rice::{self, Entry, Journal, Profile, Status, Transaction, describe};
 use crate::shell::command::{self, Action, Command};
@@ -84,11 +85,18 @@ impl Page {
     }
 }
 
+/// How long a palette or mode change takes to glide.
+const LOOK_MS: f32 = 520.0;
+
 /// Palette and theme easing from one spec to the next.
 struct Look {
     from: (Palette, Theme),
     to: (Palette, Theme),
-    t: Animated,
+    since: Option<Instant>,
+    /// The eased theme still needs applying to egui (the change's last frame included).
+    dirty: bool,
+    /// Where a mode switch's reveal wave starts; None for a plain crossfade.
+    origin: Option<Pos2>,
 }
 
 impl Look {
@@ -98,7 +106,9 @@ impl Look {
         Self {
             from: (p.clone(), th.clone()),
             to: (p, th),
-            t: Animated::new(1.0, Duration::from_millis(600)),
+            since: None,
+            dirty: false,
+            origin: None,
         }
     }
 
@@ -109,17 +119,34 @@ impl Look {
         self.from = (self.palette_at(now), self.theme(now));
         let p = Palette::generate(spec);
         self.to = (p.clone(), Theme::new(&p));
-        self.t.reset(0.0);
-        self.t.set(1.0, now);
+        self.since = Some(now);
+        self.dirty = true;
+        self.origin = None;
+    }
+
+    /// Linear progress of the current change, `0..=1`.
+    fn linear(&self, now: Instant) -> f32 {
+        self.since.map_or(1.0, |s| {
+            (now.saturating_duration_since(s).as_secs_f32() * 1000.0 / LOOK_MS).min(1.0)
+        })
+    }
+
+    /// Eased progress: slow in, slow out, so a dark-to-light swap has no visible stop.
+    fn progress(&self, now: Instant) -> f32 {
+        ease_in_out(self.linear(now))
+    }
+
+    fn animating(&self, now: Instant) -> bool {
+        self.linear(now) < 1.0
     }
 
     fn theme(&self, now: Instant) -> Theme {
-        self.from.1.blend(&self.to.1, self.t.value(now))
+        self.from.1.blend(&self.to.1, self.progress(now))
     }
 
     /// The displayed palette: target ramps with colors eased from the previous ones.
     fn palette_at(&self, now: Instant) -> Palette {
-        let t = self.t.value(now);
+        let t = self.progress(now);
         if t >= 1.0 {
             return self.to.0.clone();
         }
@@ -157,7 +184,8 @@ pub struct Studio {
     spec: PaletteSpec,
     hex: String,
     start: Instant,
-    acrylic: bool,
+    /// The Windows acrylic backdrop, when DWM gave us one.
+    backdrop: Option<Backdrop>,
     toasts: Toasts,
 
     path: Option<PathBuf>,
@@ -216,9 +244,9 @@ impl Studio {
         motion.fast = settings.reduced_motion;
         let now = Instant::now();
         #[cfg(windows)]
-        let acrylic = acrylic(cc, spec.mode == Mode::Dark);
+        let backdrop = Backdrop::new(cc, spec.mode == Mode::Dark);
         #[cfg(not(windows))]
-        let acrylic = false;
+        let backdrop = None;
         let mut s = Self {
             hex: spec.accent.to_hex(),
             settings_path,
@@ -228,7 +256,7 @@ impl Studio {
             look,
             spec,
             start: now,
-            acrylic,
+            backdrop,
             toasts: Toasts::default(),
             saved: if path.is_some() {
                 text.clone()
@@ -670,11 +698,16 @@ impl Studio {
                 ui.set_min_height(176.0);
                 ui.label(RichText::new(l.pick("Mode", "Tryb")).size(16.0).strong());
                 ui.add_space(6.0);
-                let mut mode = usize::from(self.spec.mode == Mode::Light);
-                let opts = [l.pick("Dark", "Ciemny"), l.pick("Light", "Jasny")];
-                if segmented(ui, &mut self.motion, th, Id::unique("mode"), &opts, &mut mode) {
-                    self.spec.mode = if mode == 1 { Mode::Light } else { Mode::Dark };
+                let mut light = self.spec.mode == Mode::Light;
+                let labels = [l.pick("Dark", "Ciemny"), l.pick("Light", "Jasny")];
+                if let Some(at) =
+                    mode_switch(ui, &mut self.motion, th, Id::unique("mode"), labels, &mut light)
+                {
+                    self.spec.mode = if light { Mode::Light } else { Mode::Dark };
                     self.palette_edited();
+                    if !self.settings.reduced_motion {
+                        self.look.origin = Some(at);
+                    }
                 }
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
@@ -1348,7 +1381,7 @@ impl Studio {
                 ui.label(l.pick("Reduce motion", "Ogranicz animacje"));
             });
             ui.add_space(8.0);
-            let backdrop = if self.acrylic {
+            let backdrop = if self.backdrop.is_some() {
                 l.pick("Windows acrylic backdrop: on", "Tło akrylowe Windows: włączone")
             } else {
                 l.pick(
@@ -1442,30 +1475,72 @@ pub(super) fn style_text(ctx: &egui::Context) {
     });
 }
 
-/// Asks DWM for the acrylic system backdrop (Windows 11 22H2+). False where unsupported, and
-/// the studio then paints its own opaque background.
-#[cfg(windows)]
-fn acrylic(cc: &eframe::CreationContext<'_>, dark: bool) -> bool {
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::Graphics::Dwm::{
-        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute,
-    };
-    let Ok(handle) = cc.window_handle() else {
-        return false;
-    };
-    let RawWindowHandle::Win32(h) = handle.as_raw() else {
-        return false;
-    };
-    let hwnd = HWND(h.hwnd.get() as *mut _);
-    let dark = i32::from(dark);
-    // DWMSBT_TRANSIENTWINDOW: acrylic.
-    let kind = 3i32;
-    // SAFETY: hwnd is this process's live top-level window; both values are 4-byte i32s.
-    unsafe {
-        let _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, (&raw const dark).cast(), 4);
-        DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, (&raw const kind).cast(), 4).is_ok()
+/// The acrylic system backdrop (Windows 11 22H2+) and which mode DWM tints it for.
+struct Backdrop {
+    #[cfg_attr(not(windows), allow(dead_code))]
+    hwnd: isize,
+    dark: bool,
+}
+
+impl Backdrop {
+    /// Asks DWM for acrylic. None where unsupported; the studio then paints its own opaque
+    /// background.
+    #[cfg(windows)]
+    fn new(cc: &eframe::CreationContext<'_>, dark: bool) -> Option<Self> {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Dwm::{DWMWA_SYSTEMBACKDROP_TYPE, DwmSetWindowAttribute};
+        let RawWindowHandle::Win32(h) = cc.window_handle().ok()?.as_raw() else {
+            return None;
+        };
+        let mut b = Self {
+            hwnd: h.hwnd.get(),
+            dark: !dark,
+        };
+        b.set_dark(dark);
+        // DWMSBT_TRANSIENTWINDOW: acrylic.
+        let kind = 3i32;
+        // SAFETY: hwnd is this process's live top-level window; the value is a 4-byte i32.
+        let ok = unsafe {
+            DwmSetWindowAttribute(
+                HWND(b.hwnd as *mut _),
+                DWMWA_SYSTEMBACKDROP_TYPE,
+                (&raw const kind).cast(),
+                4,
+            )
+        };
+        ok.is_ok().then_some(b)
     }
+
+    /// Retints the backdrop and title bar for dark or light.
+    fn set_dark(&mut self, dark: bool) {
+        if self.dark == dark {
+            return;
+        }
+        self.dark = dark;
+        #[cfg(windows)]
+        {
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
+            let dark = i32::from(dark);
+            // SAFETY: hwnd is this process's live top-level window; the value is a 4-byte i32.
+            unsafe {
+                let _ = DwmSetWindowAttribute(
+                    HWND(self.hwnd as *mut _),
+                    DWMWA_USE_IMMERSIVE_DARK_MODE,
+                    (&raw const dark).cast(),
+                    4,
+                );
+            }
+        }
+    }
+}
+
+/// How much of the theme's base covers the acrylic backdrop. It rises to opaque halfway
+/// through a mode change, where DWM swaps the backdrop's tint, so that swap never shows.
+fn backdrop_cover(linear: f32) -> f32 {
+    let bump = (std::f32::consts::PI * linear.clamp(0.0, 1.0)).sin();
+    0.55 + 0.45 * bump
 }
 
 impl eframe::App for Studio {
@@ -1502,11 +1577,20 @@ impl eframe::App for Studio {
             return;
         }
 
-        let theming = self.look.t.is_animating(now);
+        let theming = self.look.animating(now);
         let th = self.look.theme(now);
-        if theming {
+        if self.look.dirty {
             th.apply(&ctx);
+            self.look.dirty = theming;
         }
+        let cover = match &mut self.backdrop {
+            Some(b) => {
+                // Mode flips where the cover is opaque.
+                b.set_dark(th.dark);
+                backdrop_cover(self.look.linear(now))
+            }
+            None => 1.0,
+        };
 
         let t = if self.settings.reduced_motion {
             0.0
@@ -1514,13 +1598,15 @@ impl eframe::App for Studio {
             self.start.elapsed().as_secs_f32()
         };
         let full = ctx.content_rect();
-        glass::paint_aurora(
-            &ctx.layer_painter(egui::LayerId::background()),
-            full,
-            &th,
-            t,
-            if self.acrylic { 0.55 } else { 1.0 },
-        );
+        let bg = ctx.layer_painter(egui::LayerId::background());
+        match self.look.origin.filter(|_| theming) {
+            Some(origin) => {
+                let (from, to) = (&self.look.from.1, &self.look.to.1);
+                glass::paint_reveal(&bg, full, origin, self.look.linear(now), from, to, cover);
+                glass::paint_aurora(&bg, full, &th, t, None);
+            }
+            None => glass::paint_aurora(&bg, full, &th, t, Some(cover)),
+        }
 
         egui::Panel::left("nav")
             .exact_size(220.0)
@@ -1589,10 +1675,11 @@ impl eframe::App for Studio {
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        if self.acrylic {
+        if self.backdrop.is_some() {
             [0.0; 4]
         } else {
-            self.look.to.1.base.to_normalized_gamma_f32()
+            // The eased base, not the target: the target would flash in under the glass.
+            self.look.theme(Instant::now()).base.to_normalized_gamma_f32()
         }
     }
 
@@ -1765,5 +1852,48 @@ pub fn main() -> ExitCode {
             eprintln!("noren-studio: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spec(mode: Mode) -> PaletteSpec {
+        PaletteSpec {
+            mode,
+            ..default_spec()
+        }
+    }
+
+    #[test]
+    fn a_mode_switch_glides_without_a_stop() {
+        let t0 = Instant::now();
+        let mut look = Look::new(&spec(Mode::Dark));
+        let dark = look.theme(t0).base;
+        look.set(&spec(Mode::Light), t0);
+        assert!(look.dirty && look.animating(t0));
+        assert_eq!(look.theme(t0).base, dark, "starts where it was");
+        // Brightness rises every step; the old ease-out did 87% of the way in half the time.
+        let at = |ms: u64| look.theme(t0 + Duration::from_millis(ms)).base.r();
+        let steps: Vec<u8> = (0..=13).map(|i| at(i * 40)).collect();
+        assert!(steps.windows(2).all(|w| w[1] >= w[0]), "{steps:?}");
+        let half = at(LOOK_MS as u64 / 2);
+        let (lo, hi) = (f32::from(steps[0]), f32::from(*steps.last().unwrap()));
+        assert!(
+            (f32::from(half) - (lo + hi) / 2.0).abs() < (hi - lo) * 0.1,
+            "{half} {lo} {hi}"
+        );
+        let end = t0 + Duration::from_millis(LOOK_MS as u64 + 1);
+        assert!(!look.animating(end));
+        assert_eq!(look.theme(end).base, look.to.1.base);
+        assert_eq!(look.theme(end).light, 1.0);
+    }
+
+    #[test]
+    fn the_backdrop_is_covered_when_its_tint_swaps() {
+        assert!((backdrop_cover(0.0) - 0.55).abs() < 1e-6);
+        assert!((backdrop_cover(0.5) - 1.0).abs() < 1e-6);
+        assert!((backdrop_cover(1.0) - 0.55).abs() < 1e-5);
     }
 }

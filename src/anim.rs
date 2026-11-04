@@ -6,6 +6,16 @@ pub fn ease_out_cubic(t: f32) -> f32 {
     1.0 - (1.0 - t).powi(3)
 }
 
+/// Slow in, slow out: the curve for crossfades that should neither jump nor stall.
+pub fn ease_in_out(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    if t < 0.5 {
+        4.0 * t * t * t
+    } else {
+        1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+    }
+}
+
 /// A value that eases toward its target, like QML `Behavior on value { NumberAnimation }`.
 #[derive(Clone, Debug)]
 pub struct Animated {
@@ -66,6 +76,19 @@ impl Animated {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ease_in_out_is_symmetric_and_monotonic() {
+        assert_eq!(ease_in_out(0.0), 0.0);
+        assert_eq!(ease_in_out(0.5), 0.5);
+        assert_eq!(ease_in_out(1.0), 1.0);
+        let v: Vec<f32> = (0..=100).map(|i| ease_in_out(i as f32 / 100.0)).collect();
+        assert!(v.windows(2).all(|w| w[1] >= w[0]));
+        for i in 0..=50 {
+            let t = i as f32 / 100.0;
+            assert!((ease_in_out(t) + ease_in_out(1.0 - t) - 1.0).abs() < 1e-5);
+        }
+    }
 
     const D: Duration = Duration::from_millis(200);
 

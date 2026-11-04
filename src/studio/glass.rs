@@ -34,7 +34,10 @@ pub fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
 /// Palette roles as egui colors.
 #[derive(Clone, Debug)]
 pub struct Theme {
+    /// Which side of a mode switch the egui base visuals come from.
     pub dark: bool,
+    /// 0 for dark, 1 for light, eased during a switch so mode-dependent strengths glide.
+    pub light: f32,
     pub base: Color32,
     pub glass: Color32,
     pub glass_hi: Color32,
@@ -55,6 +58,7 @@ impl Theme {
         let dark = p.spec.mode == Mode::Dark;
         Self {
             dark,
+            light: if dark { 0.0 } else { 1.0 },
             base: c32(p.neutral.step(1)),
             glass: with_alpha(c32(p.neutral.step(2)), if dark { 0.58 } else { 0.62 }),
             glass_hi: with_alpha(c32(p.neutral.step(4)), if dark { 0.55 } else { 0.7 }),
@@ -81,6 +85,7 @@ impl Theme {
         let l = |a: Color32, b: Color32| lerp(a, b, t);
         Self {
             dark: if t < 0.5 { self.dark } else { to.dark },
+            light: self.light + (to.light - self.light) * t,
             base: l(self.base, to.base),
             glass: l(self.glass, to.glass),
             glass_hi: l(self.glass_hi, to.glass_hi),
@@ -95,6 +100,10 @@ impl Theme {
             negative: l(self.negative, to.negative),
             aurora: [0, 1, 2, 3].map(|i| l(self.aurora[i], to.aurora[i])),
         }
+    }
+
+    fn shadow(&self) -> Color32 {
+        Color32::from_black_alpha((70.0 - 42.0 * self.light).round() as u8)
     }
 
     pub fn apply(&self, ctx: &egui::Context) {
@@ -130,6 +139,13 @@ impl Theme {
         v.widgets.inactive.bg_stroke = Stroke::new(1.0, self.edge);
         v.widgets.hovered.bg_stroke = Stroke::new(1.0, with_alpha(self.accent, 0.8));
         v.widgets.active.bg_stroke = Stroke::new(1.0, self.accent);
+        v.widgets.open.bg_stroke = Stroke::new(1.0, self.accent);
+        // Fields that differ between egui's dark and light presets, set from the eased theme
+        // so the preset swap halfway through a mode switch does not show.
+        v.code_bg_color = self.glass_hi;
+        v.window_shadow.color = self.shadow();
+        v.popup_shadow.color = self.shadow();
+        v.text_cursor.stroke = Stroke::new(2.0, self.accent);
         ctx.all_styles_mut(|s| {
             s.visuals = v.clone();
             s.spacing.item_spacing = Vec2::new(10.0, 10.0);
@@ -191,11 +207,15 @@ fn blob(mesh: &mut Mesh, center: Pos2, radius: Vec2, color: Color32) {
 /// Fills `rect` with the base color and four drifting aurora blobs. `t` is seconds; a still
 /// frame when motion is reduced.
 /// `base_alpha` below 1 lets a system backdrop (Windows acrylic) show through.
-pub fn paint_aurora(painter: &Painter, rect: Rect, theme: &Theme, t: f32, base_alpha: f32) {
-    painter.rect_filled(rect, 0.0, with_alpha(theme.base, base_alpha));
+/// The drifting aurora over the base; `base_alpha` None leaves the base to the caller (a
+/// reveal wave paints it).
+pub fn paint_aurora(painter: &Painter, rect: Rect, theme: &Theme, t: f32, base_alpha: Option<f32>) {
+    if let Some(a) = base_alpha {
+        painter.rect_filled(rect, 0.0, with_alpha(theme.base, a));
+    }
     let mut mesh = Mesh::default();
     let s = rect.size();
-    let strength = if theme.dark { 0.55 } else { 0.5 };
+    let strength = 0.55 - 0.05 * theme.light;
     let orbits = [
         (0.18, 0.22, 0.55, 0.050, 0.0),
         (0.82, 0.18, 0.50, 0.037, 1.7),
@@ -217,50 +237,79 @@ pub fn card(theme: &Theme) -> Frame {
     Frame::new()
         .fill(theme.glass)
         .stroke(Stroke::new(1.0, theme.edge))
-        .corner_radius(CornerRadius::same(18))
+        .corner_radius(CornerRadius::same(CARD_RADIUS as u8))
         .inner_margin(Margin::same(18))
         .shadow(Shadow {
             offset: [0, 8],
             blur: 28,
             spread: 0,
-            color: Color32::from_black_alpha(if theme.dark { 70 } else { 28 }),
+            color: theme.shadow(),
         })
 }
 
-/// The aero highlight: a light sheen fading down from the top of `rect`.
-pub fn shine(painter: &Painter, rect: Rect, theme: &Theme) {
-    // Pills: inset by the radius so the corners stay round.
-    let inset = (rect.height() / 2.0).min(18.0);
-    let h = (rect.height() * 0.5).min(70.0);
-    let top = Rect::from_min_size(
-        rect.min + Vec2::new(inset, 1.0),
-        Vec2::new(rect.width() - 2.0 * inset, h),
-    );
-    painter.add(sheen_mesh(top, theme));
+/// The aero highlight on an accent pill: a light sheen fading down from its top.
+pub fn shine(painter: &Painter, rect: Rect) {
+    painter.add(sheen(rect, rect.height() / 2.0, 0.5, PILL_SHEEN));
 }
 
 /// A card with the aero sheen painted under its content.
 pub fn glass<R>(ui: &mut Ui, theme: &Theme, add: impl FnOnce(&mut Ui) -> R) -> R {
-    let sheen = ui.painter().add(Shape::Noop);
+    let shape = ui.painter().add(Shape::Noop);
     let r = card(theme).show(ui, add);
-    let rect = r.response.rect;
-    // Inset by the corner radius so the sheen never pokes past the rounded corners.
-    let h = (rect.height() * 0.45).min(70.0);
-    let top = Rect::from_min_size(rect.min + Vec2::new(18.0, 1.0), Vec2::new(rect.width() - 36.0, h));
-    ui.painter().set(sheen, sheen_mesh(top, theme));
+    let alpha = (14.0 + 41.0 * theme.light).round() as u8;
+    ui.painter()
+        .set(shape, sheen(r.response.rect, CARD_RADIUS, 0.45, alpha));
     r.inner
 }
 
-fn sheen_mesh(top: Rect, theme: &Theme) -> Shape {
+const CARD_RADIUS: f32 = 18.0;
+const PILL_SHEEN: u8 = 55;
+/// Never deeper than this, so tall cards keep the sheen at their top.
+const SHEEN_MAX: f32 = 70.0;
+
+/// A white sheen over the top `depth` (fraction of the height) of a rounded rect, fading to
+/// nothing. Its outline follows the rounded corners, so the gradient fills them instead of
+/// stopping at a square.
+fn sheen(rect: Rect, radius: f32, depth: f32, alpha: u8) -> Shape {
+    let h = (rect.height() * depth).min(SHEEN_MAX);
+    let radius = radius.min(rect.height() / 2.0).min(rect.width() / 2.0);
     let mut mesh = Mesh::default();
-    let hi = Color32::from_white_alpha(if theme.dark { 14 } else { 55 });
-    mesh.colored_vertex(top.left_top(), hi);
-    mesh.colored_vertex(top.right_top(), hi);
-    mesh.colored_vertex(top.right_bottom(), Color32::TRANSPARENT);
-    mesh.colored_vertex(top.left_bottom(), Color32::TRANSPARENT);
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
+    for (dy, inset) in sheen_rows(radius, h) {
+        let a = (f32::from(alpha) * (1.0 - dy / h)).round() as u8;
+        let c = Color32::from_white_alpha(a);
+        mesh.colored_vertex(Pos2::new(rect.left() + inset, rect.top() + dy), c);
+        mesh.colored_vertex(Pos2::new(rect.right() - inset, rect.top() + dy), c);
+    }
+    let rows = mesh.vertices.len() as u32 / 2;
+    for i in 0..rows.saturating_sub(1) {
+        let (l, r) = (2 * i, 2 * i + 1);
+        mesh.add_triangle(l, r, r + 2);
+        mesh.add_triangle(l, r + 2, l + 2);
+    }
     Shape::mesh(mesh)
+}
+
+/// Rows of the sheen as `(distance from the top, horizontal inset)`: one pixel below the top
+/// hairline down to `h`, the inset tracing a corner of `radius` and dense where it curves.
+fn sheen_rows(radius: f32, h: f32) -> Vec<(f32, f32)> {
+    let top = 1.0_f32.min(h);
+    let mut ys: Vec<f32> = (0..=12)
+        .map(|i| {
+            let f = i as f32 / 12.0;
+            top + (radius - top).max(0.0) * f * f
+        })
+        .filter(|&y| y < h)
+        .collect();
+    ys.extend((0..=8).map(|i| radius.max(top) + (h - radius.max(top)).max(0.0) * i as f32 / 8.0));
+    ys.retain(|&y| y < h - 0.05);
+    ys.push(h);
+    ys.dedup_by(|a, b| (*a - *b).abs() < 0.05);
+    ys.into_iter()
+        .map(|y| {
+            let d = (radius - y).max(0.0);
+            (y, radius - (radius * radius - d * d).max(0.0).sqrt())
+        })
+        .collect()
 }
 
 /// An iOS-style switch whose knob glides and whose track fills with the accent.
@@ -327,14 +376,7 @@ pub fn accent_button(
         );
     }
     p.rect_filled(rect, CornerRadius::same(255), with_alpha(theme.accent, alpha));
-    shine(
-        p,
-        rect,
-        &Theme {
-            dark: false,
-            ..theme.clone()
-        },
-    );
+    shine(p, rect);
     p.galley(
         rect.center() - galley.size() / 2.0,
         galley,
@@ -357,7 +399,25 @@ pub fn segmented(
     options: &[&str],
     selected: &mut usize,
 ) -> bool {
+    segmented_with(ui, motion, theme, id, options, selected, None)
+}
+
+/// Paints option `i`'s icon centered on a point, `on` easing from 0 to 1 as it gets selected.
+type Icon<'a> = &'a dyn Fn(&Painter, Pos2, usize, f32, Color32);
+
+const ICON_W: f32 = 20.0;
+
+fn segmented_with(
+    ui: &mut Ui,
+    motion: &mut Motion,
+    theme: &Theme,
+    id: Id,
+    options: &[&str],
+    selected: &mut usize,
+    icon: Option<Icon>,
+) -> bool {
     let font = egui::FontId::proportional(13.5);
+    let lead = if icon.is_some() { ICON_W } else { 0.0 };
     let widths: Vec<f32> = options
         .iter()
         .map(|o| {
@@ -366,6 +426,7 @@ pub fn segmented(
                 .size()
                 .x
                 + 26.0
+                + lead
         })
         .collect();
     let size = Vec2::new(widths.iter().sum::<f32>() + 6.0, 32.0);
@@ -396,26 +457,186 @@ pub fn segmented(
     );
     let pill = Rect::from_x_y_ranges(left..=right, sel.y_range());
     p.rect_filled(pill, CornerRadius::same(255), theme.accent);
-    shine(
-        p,
-        pill,
-        &Theme {
-            dark: false,
-            ..theme.clone()
-        },
-    );
+    shine(p, pill);
     for (i, (cell, hovered)) in cells.iter().enumerate() {
         let on = motion.get(id.with(("t", i)), if i == *selected { 1.0 } else { 0.0 }, 200);
         let base = if *hovered { theme.text } else { theme.dim };
+        let color = lerp(base, theme.on_accent, on);
+        if let Some(icon) = icon {
+            icon(
+                p,
+                Pos2::new(cell.left() + 6.0 + ICON_W / 2.0, cell.center().y),
+                i,
+                on,
+                color,
+            );
+        }
         p.text(
-            cell.center(),
+            cell.center() + Vec2::new(lead / 2.0, 0.0),
             egui::Align2::CENTER_CENTER,
             options[i],
             font.clone(),
-            lerp(base, theme.on_accent, on),
+            color,
         );
     }
     changed
+}
+
+/// The Dark / Light switch: a moon and a sun that come alive when picked. Returns where the
+/// pointer was when the mode changed, the origin of the reveal wave.
+pub fn mode_switch(
+    ui: &mut Ui,
+    motion: &mut Motion,
+    theme: &Theme,
+    id: Id,
+    labels: [&str; 2],
+    light: &mut bool,
+) -> Option<Pos2> {
+    let mut i = usize::from(*light);
+    let changed = segmented_with(ui, motion, theme, id, &labels, &mut i, Some(&mode_icon));
+    *light = i == 1;
+    changed.then(|| {
+        ui.ctx()
+            .pointer_interact_pos()
+            .unwrap_or_else(|| ui.min_rect().center())
+    })
+}
+
+fn mode_icon(p: &Painter, c: Pos2, i: usize, on: f32, color: Color32) {
+    if i == 0 {
+        moon(p, c, on, color);
+    } else {
+        sun(p, c, on, color);
+    }
+}
+
+/// Eight rays that grow and turn an eighth of a circle as the sun gets picked.
+fn sun(p: &Painter, c: Pos2, on: f32, color: Color32) {
+    p.circle_filled(c, 3.0 + 0.6 * on, color);
+    let (inner, outer) = (5.2 + 0.4 * on, 6.6 + 1.6 * on);
+    for k in 0..8 {
+        let a = k as f32 * TAU / 8.0 + on * TAU / 8.0;
+        let d = Vec2::angled(a);
+        p.line_segment([c + d * inner, c + d * outer], Stroke::new(1.5, color));
+    }
+}
+
+/// A crescent that tilts in as the moon gets picked, with two stars popping in beside it.
+fn moon(p: &Painter, c: Pos2, on: f32, color: Color32) {
+    let tilt = -0.5 - 0.5 * on;
+    let outline = crescent(c, 6.0, 4.6, 3.6, tilt);
+    let mut mesh = Mesh::default();
+    let n = outline.len() / 2;
+    for &q in &outline {
+        mesh.colored_vertex(q, color);
+    }
+    // Outer arc runs 0..n, inner arc n..2n backwards: stitch them into a strip.
+    for k in 0..n as u32 - 1 {
+        let (o, o2) = (k, k + 1);
+        let (i, i2) = (2 * n as u32 - 1 - k, 2 * n as u32 - 2 - k);
+        mesh.add_triangle(o, o2, i);
+        mesh.add_triangle(o2, i2, i);
+    }
+    p.add(Shape::mesh(mesh));
+    // A hairline of the same color along the outline smooths the mesh's hard edge.
+    p.add(Shape::closed_line(outline, Stroke::new(0.8, color)));
+    for (offset, size, delay) in [(Vec2::new(6.5, -5.0), 1.3, 0.0), (Vec2::new(8.5, 1.5), 0.9, 0.3)] {
+        let s = ((on - delay) / (1.0 - delay)).clamp(0.0, 1.0);
+        if s > 0.0 {
+            star(p, c + offset, size * s * 1.6, color);
+        }
+    }
+}
+
+fn star(p: &Painter, c: Pos2, r: f32, color: Color32) {
+    let st = Stroke::new(1.0, color);
+    p.line_segment([c - Vec2::X * r, c + Vec2::X * r], st);
+    p.line_segment([c - Vec2::Y * r, c + Vec2::Y * r], st);
+}
+
+/// A crescent's outline: the arc of the circle of radius `big` at `c` left visible by a circle
+/// of radius `small` whose center sits `shift` away in direction `angle`, then the small
+/// circle's arc back. Both arcs have the same number of points and share their ends.
+fn crescent(c: Pos2, big: f32, small: f32, shift: f32, angle: f32) -> Vec<Pos2> {
+    const N: usize = 18;
+    // Where the circles cross, as angles from each center (measured from the shift direction).
+    let x = (shift * shift + big * big - small * small) / (2.0 * shift);
+    let a = (x / big).clamp(-1.0, 1.0).acos();
+    let b = ((x - shift) / small).clamp(-1.0, 1.0).acos();
+    let dir = Vec2::angled(angle);
+    let rot = |v: Vec2| Vec2::new(v.x * dir.x - v.y * dir.y, v.x * dir.y + v.y * dir.x);
+    let small_c = c + rot(Vec2::new(shift, 0.0));
+    let mut pts = Vec::with_capacity(2 * N);
+    for k in 0..N {
+        let t = k as f32 / (N - 1) as f32;
+        let ang = a + t * (TAU - 2.0 * a);
+        pts.push(c + rot(Vec2::angled(ang) * big));
+    }
+    for k in 0..N {
+        let t = k as f32 / (N - 1) as f32;
+        let ang = TAU - b - t * (TAU - 2.0 * b);
+        pts.push(small_c + rot(Vec2::angled(ang) * small));
+    }
+    pts
+}
+
+/// The background of a mode switch: the old base, and the new one spreading as a soft-edged
+/// disc from `origin` with a glowing wavefront. `p` is linear progress, `0..=1`.
+pub fn paint_reveal(
+    painter: &Painter,
+    rect: Rect,
+    origin: Pos2,
+    p: f32,
+    from: &Theme,
+    to: &Theme,
+    base_alpha: f32,
+) {
+    const FEATHER: f32 = 90.0;
+    painter.rect_filled(rect, 0.0, with_alpha(from.base, base_alpha));
+    let reach = reveal_reach(rect, origin) + FEATHER;
+    let radius = crate::anim::ease_in_out(p) * reach;
+    let solid = with_alpha(to.base, base_alpha);
+    let clear = with_alpha(to.base, 0.0);
+    let glow = with_alpha(to.accent, 0.35 * (1.0 - p));
+    let mut mesh = Mesh::default();
+    mesh.colored_vertex(origin, solid);
+    let rings = [
+        ((radius - FEATHER).max(0.0), solid),
+        (radius, clear),
+        ((radius - 14.0).max(0.0), Color32::TRANSPARENT),
+        (radius, glow),
+        (radius + 22.0, Color32::TRANSPARENT),
+    ];
+    const N: u32 = 120;
+    for (r, color) in rings {
+        for k in 0..N {
+            mesh.colored_vertex(origin + Vec2::angled(k as f32 * TAU / N as f32) * r, color);
+        }
+    }
+    let ring = |i: u32| 1 + i * N;
+    for k in 0..N {
+        let k2 = (k + 1) % N;
+        mesh.add_triangle(0, ring(0) + k, ring(0) + k2);
+        // Feathered edge of the disc, then the glow band in two halves.
+        for (a, b) in [(0, 1), (2, 3), (3, 4)] {
+            mesh.add_triangle(ring(a) + k, ring(b) + k, ring(b) + k2);
+            mesh.add_triangle(ring(a) + k, ring(b) + k2, ring(a) + k2);
+        }
+    }
+    painter.add(Shape::mesh(mesh));
+}
+
+/// Distance from `origin` to the farthest corner of `rect`.
+fn reveal_reach(rect: Rect, origin: Pos2) -> f32 {
+    [
+        rect.left_top(),
+        rect.right_top(),
+        rect.left_bottom(),
+        rect.right_bottom(),
+    ]
+    .into_iter()
+    .map(|q| q.distance(origin))
+    .fold(0.0, f32::max)
 }
 
 /// A status dot that breathes while `alive`.
@@ -441,4 +662,85 @@ pub fn chip(ui: &mut Ui, text: &str, color: Color32) -> Response {
             ui.label(egui::RichText::new(text).size(12.0).color(color))
         })
         .response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sheen_rows_stay_inside_the_rounded_corner() {
+        for (radius, h) in [(18.0, 70.0), (13.0, 13.0), (18.0, 6.0), (0.0, 20.0)] {
+            let rows = sheen_rows(radius, h);
+            assert!(rows.len() >= 2, "{radius} {h}");
+            assert!(rows.windows(2).all(|w| w[0].0 < w[1].0), "rows go down");
+            assert!((rows.last().unwrap().0 - h).abs() < 1e-3, "reaches the bottom");
+            for (y, inset) in rows {
+                // A point on the row's left end lies on or inside the corner circle.
+                let (cx, cy) = (radius - inset, radius - y);
+                if y < radius {
+                    assert!(
+                        cx * cx + cy * cy <= radius * radius + 1e-2,
+                        "{radius} {y} {inset}"
+                    );
+                } else {
+                    assert_eq!(inset, 0.0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn crescent_arcs_meet_and_the_inner_one_stays_inside() {
+        let c = Pos2::new(10.0, 10.0);
+        for angle in [-1.0, -0.5, 0.0, 2.0] {
+            let pts = crescent(c, 6.0, 4.6, 3.6, angle);
+            assert_eq!(pts.len(), 36);
+            let (outer, inner) = pts.split_at(18);
+            assert!(outer[0].distance(inner[17]) < 1e-3, "start meets");
+            assert!(outer[17].distance(inner[0]) < 1e-3, "end meets");
+            assert!(outer.iter().all(|q| (q.distance(c) - 6.0).abs() < 1e-3));
+            assert!(inner.iter().all(|q| q.distance(c) <= 6.0 + 1e-3));
+        }
+    }
+
+    #[test]
+    fn the_reveal_reaches_the_farthest_corner() {
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(300.0, 400.0));
+        assert_eq!(reveal_reach(rect, Pos2::ZERO), 500.0);
+        assert_eq!(reveal_reach(rect, Pos2::new(150.0, 200.0)), 250.0);
+    }
+
+    #[test]
+    fn pill_sheen_reaches_into_the_round_ends() {
+        // The old sheen started a full radius in; the new one starts near the edge midway down.
+        let rows = sheen_rows(13.0, 13.0);
+        let (_, inset) = rows.iter().find(|(y, _)| *y >= 6.0).unwrap();
+        assert!(*inset < 3.0, "{inset}");
+    }
+
+    #[test]
+    fn blending_dark_to_light_eases_the_strengths() {
+        let t = |light: f32| Theme {
+            dark: light < 0.5,
+            light,
+            base: Color32::BLACK,
+            glass: Color32::BLACK,
+            glass_hi: Color32::BLACK,
+            edge: Color32::BLACK,
+            text: Color32::BLACK,
+            dim: Color32::BLACK,
+            accent: Color32::BLACK,
+            accent_soft: Color32::BLACK,
+            on_accent: Color32::BLACK,
+            positive: Color32::BLACK,
+            warning: Color32::BLACK,
+            negative: Color32::BLACK,
+            aurora: [Color32::BLACK; 4],
+        };
+        let mid = t(0.0).blend(&t(1.0), 0.25);
+        assert!((mid.light - 0.25).abs() < 1e-6);
+        assert!(mid.dark);
+        assert_eq!(mid.shadow(), Color32::from_black_alpha(60));
+    }
 }
