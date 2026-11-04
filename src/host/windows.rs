@@ -339,7 +339,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
 }
 
-fn monitors() -> Result<Vec<Display>, String> {
+pub(super) fn monitors() -> Result<Vec<Display>, String> {
     let mut displays: Vec<Display> = Vec::new();
     // The callback runs synchronously and only borrows this vector.
     unsafe {

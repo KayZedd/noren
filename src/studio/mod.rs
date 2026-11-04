@@ -5,6 +5,7 @@
 //! [`model`] is the pure part and always built; the egui app needs the `studio` feature.
 
 pub mod model;
+pub mod updates;
 
 #[cfg(feature = "studio")]
 mod app;

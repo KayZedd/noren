@@ -88,6 +88,8 @@ pub struct Settings {
     pub reduced_motion: bool,
     /// Start holding the profile as soon as the studio opens.
     pub live_on_start: bool,
+    /// Do not ask GitHub for a newer release when the studio opens.
+    pub skip_update_check: bool,
 }
 
 impl Settings {
@@ -464,6 +466,7 @@ mod tests {
             lang: Lang::Pl,
             reduced_motion: true,
             live_on_start: true,
+            skip_update_check: true,
         };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);

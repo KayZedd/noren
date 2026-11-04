@@ -18,6 +18,7 @@ use super::model::{
     AIZOME, Lang, NEW_PROFILE, Page, Settings, ToastKind, Toasts, ago, default_spec, icon_rgba, set_palette,
 };
 use super::palette::{Item, Outcome, PaletteUi};
+use super::updates::{self, Updater};
 use crate::Color;
 use crate::anim::{ease_in_out, ease_out_cubic};
 use crate::palette::{Contrast, Mode, Palette, PaletteSpec, apca};
@@ -211,6 +212,14 @@ pub struct Studio {
     /// The Ctrl+K command palette, while open.
     palette: Option<PaletteUi>,
 
+    /// Update check and install.
+    updater: Updater,
+    /// The check made on start reports failures quietly: being offline is not news.
+    update_quiet: bool,
+    update_dismissed: bool,
+    /// The compatibility report, while shown.
+    report: Option<crate::report::Report>,
+
     #[cfg(windows)]
     tray: Option<super::tray::Tray>,
     quitting: bool,
@@ -277,6 +286,10 @@ impl Studio {
             new_state: String::new(),
             journal: None,
             palette: None,
+            updater: Updater::default(),
+            update_quiet: true,
+            update_dismissed: false,
+            report: None,
             #[cfg(windows)]
             tray: None,
             quitting: false,
@@ -293,7 +306,98 @@ impl Studio {
         if s.settings.live_on_start {
             s.start_live();
         }
+        // Releases are published for Windows only.
+        if cfg!(windows) && !s.settings.skip_update_check {
+            let ctx = cc.egui_ctx.clone();
+            s.updater.check(move || ctx.request_repaint());
+        }
         s
+    }
+
+    fn check_updates(&mut self, ctx: &egui::Context) {
+        self.update_quiet = false;
+        self.update_dismissed = false;
+        let ctx = ctx.clone();
+        self.updater.check(move || ctx.request_repaint());
+    }
+
+    fn install_update(&mut self, ctx: &egui::Context) {
+        let ctx = ctx.clone();
+        self.updater.install(move || ctx.request_repaint());
+    }
+
+    /// Toasts for finished update work.
+    fn poll_updates(&mut self) {
+        if !self.updater.poll() {
+            return;
+        }
+        let l = self.lang();
+        match self.updater.state.clone() {
+            updates::State::UpToDate if !self.update_quiet => {
+                self.toast(
+                    ToastKind::Ok,
+                    l.pick("noren is up to date", "noren jest aktualny"),
+                );
+            }
+            updates::State::Installed(r) => self.toast(
+                ToastKind::Ok,
+                format!(
+                    "{} {}. {}",
+                    l.pick("Updated to noren", "Zaktualizowano do noren"),
+                    r.version,
+                    l.pick(
+                        "Restart the studio to use it.",
+                        "Uruchom studio ponownie, żeby go użyć."
+                    )
+                ),
+            ),
+            updates::State::Failed(e) if !self.update_quiet || matches!(self.page, Page::Settings) => {
+                self.toast(
+                    ToastKind::Error,
+                    format!("{}: {e}", l.pick("Update", "Aktualizacja")),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    /// A strip above the page while a newer release waits.
+    fn update_banner(&mut self, ui: &mut Ui, th: &Theme) {
+        let updates::State::Available(release) = &self.updater.state else {
+            return;
+        };
+        if self.update_dismissed {
+            return;
+        }
+        let (version, page) = (release.version, release.page.clone());
+        let l = self.lang();
+        let ctx = ui.ctx().clone();
+        glass(ui, th, |ui| {
+            ui.set_min_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "{} {version} {}",
+                        l.pick("noren", "noren"),
+                        l.pick("is out", "jest już dostępny")
+                    ))
+                    .strong(),
+                );
+                ui.add_space(8.0);
+                if accent_button(ui, &mut self.motion, th, l.pick("Install", "Zainstaluj"), true).clicked() {
+                    self.install_update(&ctx);
+                }
+                if ui.button(l.pick("Release notes", "Lista zmian")).clicked()
+                    && let Err(e) = command::open(&page)
+                {
+                    self.toast(ToastKind::Error, e.to_string());
+                }
+                if ui.button(l.pick("Later", "Później")).clicked() {
+                    self.update_dismissed = true;
+                }
+            });
+        });
+        ui.add_space(8.0);
     }
 
     fn lang(&self) -> Lang {
@@ -1428,6 +1532,14 @@ impl Studio {
             }
         });
         ui.add_space(4.0);
+        self.updates_ui(ui, th);
+        ui.add_space(4.0);
+        self.report_ui(ui, th);
+    }
+
+    fn updates_ui(&mut self, ui: &mut Ui, th: &Theme) {
+        let l = self.lang();
+        let ctx = ui.ctx().clone();
         glass(ui, th, |ui| {
             ui.set_min_width(ui.available_width());
             ui.label(RichText::new(format!("noren {}", env!("CARGO_PKG_VERSION"))).strong());
@@ -1438,6 +1550,132 @@ impl Studio {
                 ))
                 .color(th.dim),
             );
+            ui.add_space(8.0);
+            let status = match &self.updater.state {
+                updates::State::Idle => String::new(),
+                updates::State::Checking => l.pick("Checking…", "Sprawdzanie…").into(),
+                updates::State::UpToDate => l
+                    .pick("This is the newest release.", "To najnowsza wersja.")
+                    .into(),
+                updates::State::Available(r) => {
+                    format!("{} {}", l.pick("Available:", "Dostępna:"), r.version)
+                }
+                updates::State::Installing(r) => {
+                    format!("{} {}…", l.pick("Installing", "Instalowanie"), r.version)
+                }
+                updates::State::Installed(r) => format!(
+                    "{} {}",
+                    r.version,
+                    l.pick(
+                        "is installed; restart the studio to use it.",
+                        "zainstalowana; uruchom studio ponownie."
+                    )
+                ),
+                updates::State::Failed(e) => e.clone(),
+            };
+            ui.horizontal(|ui| {
+                let idle = !self.updater.busy();
+                if ui
+                    .add_enabled(
+                        idle && cfg!(windows),
+                        egui::Button::new(l.pick("Check for updates", "Sprawdź aktualizacje")),
+                    )
+                    .clicked()
+                {
+                    self.check_updates(&ctx);
+                }
+                if matches!(self.updater.state, updates::State::Available(_))
+                    && accent_button(ui, &mut self.motion, th, l.pick("Install", "Zainstaluj"), true)
+                        .clicked()
+                {
+                    self.install_update(&ctx);
+                }
+                ui.label(RichText::new(status).color(th.dim));
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let mut on = !self.settings.skip_update_check;
+                if toggle(ui, &mut self.motion, th, &mut on).changed() {
+                    self.settings.skip_update_check = !on;
+                    self.save_settings();
+                }
+                ui.label(l.pick(
+                    "Check for updates when the studio opens",
+                    "Sprawdzaj aktualizacje przy otwarciu studia",
+                ));
+            });
+            ui.label(
+                RichText::new(l.pick(
+                    "Updates come from GitHub Releases and install only when their signature checks out.",
+                    "Aktualizacje pochodzą z GitHub Releases i instalują się tylko z poprawnym podpisem.",
+                ))
+                .size(12.0)
+                .color(th.dim),
+            );
+        });
+    }
+
+    fn report_ui(&mut self, ui: &mut Ui, th: &Theme) {
+        let l = self.lang();
+        glass(ui, th, |ui| {
+            ui.set_min_width(ui.available_width());
+            ui.label(RichText::new(l.pick("Compatibility report", "Raport kompatybilności")).strong());
+            ui.label(
+                RichText::new(l.pick(
+                    "Versions, monitors and what the profile sets up, without names or paths. \
+                     It opens as a GitHub issue that you read and submit yourself; nothing is sent before that.",
+                    "Wersje, monitory i to, co ustawia profil, bez nazw i ścieżek. \
+                     Otwiera się jako zgłoszenie na GitHubie, które sam czytasz i wysyłasz; wcześniej nic nie wychodzi.",
+                ))
+                .color(th.dim),
+            );
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                let label = if self.report.is_some() {
+                    l.pick("Hide report", "Ukryj raport")
+                } else {
+                    l.pick("Show report", "Pokaż raport")
+                };
+                if ui.button(label).clicked() {
+                    self.report = match self.report {
+                        Some(_) => None,
+                        None => {
+                            let transactions = journal().and_then(|j| j.list().map_err(|e| e.to_string()));
+                            Some(crate::report::Report::collect(
+                                self.parsed.as_ref().ok(),
+                                &transactions.unwrap_or_default(),
+                            ))
+                        }
+                    };
+                }
+                let mut failed = None;
+                if let Some(report) = &self.report
+                    && accent_button(
+                        ui,
+                        &mut self.motion,
+                        th,
+                        l.pick("Open as GitHub issue", "Otwórz jako zgłoszenie na GitHubie"),
+                        true,
+                    )
+                    .clicked()
+                    && let Err(e) = command::open(&report.issue_url())
+                {
+                    failed = Some(e.to_string());
+                }
+                if let Some(e) = failed {
+                    self.toast(ToastKind::Error, e);
+                }
+            });
+            if let Some(report) = &self.report {
+                ui.add_space(6.0);
+                let mut text = format!("{}\n\n{}", report.title(), report.markdown());
+                ui.add(
+                    TextEdit::multiline(&mut text)
+                        .code_editor()
+                        .interactive(false)
+                        .desired_width(f32::INFINITY),
+                );
+            }
         });
     }
 }
@@ -1596,6 +1834,7 @@ impl eframe::App for Studio {
             }
         }
         self.check_runner();
+        self.poll_updates();
     }
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
@@ -1668,6 +1907,7 @@ impl eframe::App for Studio {
                 ui.multiply_opacity(page_t);
                 ui.add_space(14.0 * (1.0 - page_t));
                 self.header(ui, &th);
+                self.update_banner(ui, &th);
                 match self.page {
                     Page::Palette => {
                         ScrollArea::vertical()

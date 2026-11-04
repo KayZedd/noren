@@ -32,6 +32,9 @@ usage:
   noren state                      list states
   noren state <name> <ok|fail|warn|busy|clear>
                                    set a state read by border = state:<name>
+  noren report [<profile.toml>]    print a compatibility report (no names or paths)
+                                   [--open: open it as a GitHub issue to review and submit]
+  noren update [--check]           install the newest signed release, or only check
 
 options:
   --journal <dir>                  journal location (default: %LOCALAPPDATA%\\noren\\journal)
@@ -309,6 +312,47 @@ fn run(args: &[String]) -> Result<(), String> {
                 }
                 _ => Err("usage: noren state [<name> <ok|fail|warn|busy|clear>]".into()),
             }
+        }
+        "report" => {
+            let profile = match positional(rest) {
+                Some(path) => Some(Profile::load(path.as_ref())?),
+                None => None,
+            };
+            // A missing or unreadable journal only leaves the transactions out.
+            let transactions = journal(rest).and_then(|j| j.list().map_err(|e| e.to_string()));
+            let report = noren::report::Report::collect(profile.as_ref(), &transactions.unwrap_or_default());
+            println!("{}\n", report.title());
+            print!("{}", report.markdown());
+            if flag(rest, "--open") {
+                shell::command::open(&report.issue_url()).map_err(|e| e.to_string())?;
+                println!("\nopened a new GitHub issue in the browser; nothing is sent until you submit it");
+            } else {
+                println!("\nnoren report --open opens this as a GitHub issue to review and submit");
+            }
+            Ok(())
+        }
+        "update" => {
+            use noren::update::{self, Outcome, Version};
+            if flag(rest, "--check") {
+                match update::check()? {
+                    Some(r) => println!(
+                        "noren {} is out (this is {}): {}",
+                        r.version,
+                        Version::current(),
+                        r.page
+                    ),
+                    None => println!("noren {} is the newest release", Version::current()),
+                }
+                return Ok(());
+            }
+            match update::update()? {
+                Outcome::UpToDate(v) => println!("noren {v} is the newest release"),
+                Outcome::Updated { release, programs } => {
+                    println!("updated to noren {}: {}", release.version, programs.join(", "));
+                    println!("release notes: {}", release.page);
+                }
+            }
+            Ok(())
         }
         "help" | "--help" | "-h" => {
             print!("{USAGE}");

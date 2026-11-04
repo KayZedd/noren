@@ -120,6 +120,12 @@ noren card my-rice.toml card.png              # 2x by default; --scale 1 for a s
 
 ![A rice card for a pink profile: ramps, terminal colors and the features it uses](docs/card.webp)
 
+### Updates and compatibility reports
+
+`noren update` installs the newest release from GitHub Releases. It updates `noren.exe` and, if it sits next to it, `noren-studio.exe`. Before swapping anything, it checks a minisign signature over `SHA256SUMS`, made with the key built into noren, and checks each download against its sum. `noren update --check` only reports what is available. The studio checks when it opens; you can turn that off in Settings.
+
+`noren report [profile.toml]` prints an opt-in compatibility report: the noren and Windows versions, monitor sizes and scaling, what the profile sets up, and how the last transactions ended. It holds no profile names, paths or program names. `--open`, or the studio's Settings page, opens the report as a prefilled GitHub issue. Nothing is sent until you submit it.
+
 ## Window rules
 
 `[[window]]` tables in the same profile restyle other apps' windows while `noren run` is running. Ctrl+C puts every window back as it was.

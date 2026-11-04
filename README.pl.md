@@ -120,6 +120,12 @@ noren card my-rice.toml card.png              # domyślnie 2x; --scale 1 daje mn
 
 ![Karta rice'a dla różowego profilu: rampy, kolory terminala i używane funkcje](docs/card.webp)
 
+### Aktualizacje i raporty kompatybilności
+
+`noren update` instaluje najnowsze wydanie z GitHub Releases. Aktualizuje `noren.exe` i, jeśli leży obok, `noren-studio.exe`. Zanim cokolwiek podmieni, sprawdza podpis minisign na `SHA256SUMS`, złożony kluczem wbudowanym w noren, oraz sumę każdego pobranego pliku. `noren update --check` tylko pokazuje, co jest dostępne. Studio sprawdza przy otwarciu; da się to wyłączyć w Ustawieniach.
+
+`noren report [profil.toml]` wypisuje opcjonalny raport kompatybilności: wersje noren i Windows, rozmiary i skalowanie monitorów, co ustawia profil oraz jak skończyły się ostatnie transakcje. Nie zawiera nazw profili, ścieżek ani nazw programów. `--open` albo strona Ustawień w studio otwiera raport jako wypełnione zgłoszenie na GitHubie. Nic nie wychodzi, dopóki go nie wyślesz.
+
 ## Reguły okien
 
 Tabele `[[window]]` w tym samym profilu przestylowują okna innych aplikacji, dopóki działa `noren run`. Ctrl+C przywraca każde okno do stanu sprzed.

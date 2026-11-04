@@ -594,8 +594,9 @@ pub fn exec(action: &Action, state_dir: Option<&Path>) -> io::Result<()> {
     }
 }
 
+/// Opens a file, folder or link with its default program.
 #[cfg(windows)]
-fn open(target: &str) -> io::Result<()> {
+pub fn open(target: &str) -> io::Result<()> {
     use windows::Win32::UI::Shell::ShellExecuteW;
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     use windows::core::{HSTRING, w};
@@ -610,8 +611,9 @@ fn open(target: &str) -> io::Result<()> {
     }
 }
 
+/// Opens a file, folder or link with its default program.
 #[cfg(not(windows))]
-fn open(target: &str) -> io::Result<()> {
+pub fn open(target: &str) -> io::Result<()> {
     let opener = if cfg!(target_os = "macos") {
         "open"
     } else {

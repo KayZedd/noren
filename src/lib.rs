@@ -22,6 +22,7 @@ pub mod media;
 pub mod palette;
 pub mod panel;
 pub mod render;
+pub mod report;
 pub mod rice;
 pub mod sampler;
 pub mod shell;
@@ -29,6 +30,7 @@ pub mod studio;
 pub mod surface;
 pub mod text;
 pub mod theme;
+pub mod update;
 pub mod widget;
 
 pub use anim::{Animated, ease_out_cubic};

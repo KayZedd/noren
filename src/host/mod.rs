@@ -120,6 +120,17 @@ pub fn rgba_to_bgra(src: &[u8], dst: &mut [u8]) {
     }
 }
 
+/// The active monitors, as Windows reports them.
+#[cfg(windows)]
+pub fn displays() -> Result<Vec<Display>, String> {
+    windows::monitors()
+}
+
+#[cfg(not(windows))]
+pub fn displays() -> Result<Vec<Display>, String> {
+    Err("monitors are listed on Windows".into())
+}
+
 /// Runs the surfaces until one asks to quit or the user picks Quit from the context menu.
 #[cfg(windows)]
 pub fn run(entries: Vec<Entry>) -> Result<(), String> {
