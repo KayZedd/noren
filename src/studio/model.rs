@@ -64,6 +64,9 @@ border = "accent.7"
 # dark = "21:00"
 # latitude = 52.23
 # longitude = 21.01
+
+# [switcher]             # Alt+Tab with live window thumbnails while Live holds the profile
+# key = "Alt+Tab"
 "##;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

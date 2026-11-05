@@ -62,6 +62,9 @@ pub fn features(p: &Profile) -> Vec<String> {
     if let Some(s) = &p.schedule {
         out.push(format!("light {} · dark {}", s.light, s.dark));
     }
+    if let Some(s) = &p.switcher {
+        out.push(format!("switcher {}", s.key));
+    }
     out
 }
 
@@ -255,7 +258,8 @@ mod tests {
             "[windows]\n[focus]\ndim = 0.3\n[[window]]\nexe = \"a.exe\"\nopacity = 0.9\n\
              [[window]]\nexe = \"b.exe\"\nopacity = 0.9\n[media]\n\
              [[layout]]\ndesktop = \"Music\"\nwidgets = [\"media\"]\n\
-             [schedule]\nlight = \"sunrise\"\ndark = \"21:00\"\nlatitude = 52.2\nlongitude = 21.0\n",
+             [schedule]\nlight = \"sunrise\"\ndark = \"21:00\"\nlatitude = 52.2\nlongitude = 21.0\n\
+             [switcher]\n",
         );
         assert_eq!(
             features(&p),
@@ -266,6 +270,7 @@ mod tests {
                 "now playing",
                 "1 panel layout",
                 "light sunrise · dark 21:00",
+                "switcher Alt+Tab",
             ]
         );
     }

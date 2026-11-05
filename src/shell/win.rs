@@ -43,9 +43,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     RegisterClassW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE,
     SW_MAXIMIZE, SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetLayeredWindowAttributes,
     SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx,
-    WH_KEYBOARD_LL, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_KEYDOWN, WM_QUIT,
-    WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
-    WS_POPUP,
+    WH_KEYBOARD_LL, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_KEYDOWN, WM_LBUTTONUP,
+    WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{BOOL, PWSTR, w};
 
@@ -58,6 +58,9 @@ use super::keys::Hold;
 use super::rules::{Op, Rules, ScreenRect, Style, WindowInfo, monitor_order, ops, relocate};
 use super::schedule::{Local, Tracker};
 use super::state::{self, State};
+use super::switcher::{Act, Switch};
+use super::switcher_win::{Overlay, activate};
+use crate::Theme;
 use crate::palette::{Mode, Palette};
 use crate::rice::{self, Journal, Profile, SystemStore};
 
@@ -92,6 +95,8 @@ const FRAME_MS: u32 = 33;
 const XRAY: u32 = 0xFFFF_0001;
 /// Queue entry from the keyboard hook: the command at this index finished its chord.
 const CHORD: u32 = 0xFFFF_0002;
+/// Queue entry from the keyboard hook: a switcher [`Act`], packed by [`Act::encode`].
+const SWITCH: u32 = 0xFFFF_0003;
 
 static LOOP_THREAD: AtomicU32 = AtomicU32::new(0);
 
@@ -101,6 +106,8 @@ thread_local! {
     static HOLD: RefCell<Option<Hold>> = const { RefCell::new(None) };
     /// The chord machine, also owned by the keyboard hook.
     static CHORDS: RefCell<Option<Chords>> = const { RefCell::new(None) };
+    /// The window switcher's keys, also owned by the keyboard hook.
+    static SWITCH_KEYS: RefCell<Option<Switch>> = const { RefCell::new(None) };
 }
 
 fn wake() {
@@ -139,6 +146,8 @@ struct Runtime {
     frame: usize,
     /// The dark/light schedule and the profile it re-applies.
     schedule: Option<(Tracker, Profile)>,
+    /// The window switcher popup (`[switcher]`).
+    switcher: Option<Overlay>,
 }
 
 fn win_event_hook(event: u32) -> HWINEVENTHOOK {
@@ -179,6 +188,7 @@ pub fn hold(
         commands,
         glows,
         schedule,
+        switcher,
         profile,
         source,
     } = live;
@@ -224,7 +234,12 @@ pub fn hold(
         let chords = commands.chords();
         let chording = chords.is_some();
         CHORDS.with(|c| *c.borrow_mut() = chords);
-        let keyboard = if xray.is_some() || chording {
+        SWITCH_KEYS.with(|k| *k.borrow_mut() = switcher.as_ref().map(|s| Switch::new(s.combo.clone())));
+        let overlay_switcher = match &switcher {
+            Some(s) => Some(Overlay::new(palette.theme(Theme::aizome()), s.thumbnails)?),
+            None => None,
+        };
+        let keyboard = if xray.is_some() || chording || switcher.is_some() {
             let module = GetModuleHandleW(None).map_err(io::Error::other)?;
             Some(
                 SetWindowsHookExW(WH_KEYBOARD_LL, Some(on_key), Some(module.into()), 0)
@@ -253,13 +268,19 @@ pub fn hold(
             layers,
             frame: 0,
             schedule: schedule.map(|t| (t, profile)),
+            switcher: overlay_switcher,
         };
         if watch_states {
             rt.states = rt.read_states();
         }
         rt.glows.update(&rt.states, Instant::now());
         rt.follow_schedule();
-        let slow = if watch_states || rt.xray.is_some() || chording || rt.schedule.is_some() {
+        let slow = if watch_states
+            || rt.xray.is_some()
+            || chording
+            || rt.schedule.is_some()
+            || rt.switcher.is_some()
+        {
             SetTimer(None, 0, STATE_POLL_MS, None)
         } else {
             0
@@ -290,6 +311,9 @@ pub fn hold(
         }
         if !rt.glows.is_empty() {
             eprintln!("noren: {} edge glow(s) follow their states", rt.glows.list.len());
+        }
+        if let Some(s) = &switcher {
+            eprintln!("noren: {} switches windows", s.combo);
         }
 
         let mut msg = MSG::default();
@@ -326,9 +350,24 @@ pub fn hold(
                             c.expire(now);
                         }
                     });
+                    let lost = SWITCH_KEYS.with(|k| {
+                        k.borrow_mut()
+                            .as_mut()
+                            .and_then(|k| k.verify(|vk| GetAsyncKeyState(vk as i32) < 0))
+                    });
+                    if let Some(act) = lost {
+                        rt.switch(act);
+                    }
                 }
                 WM_TIMER => {}
                 WAKE => {}
+                WM_LBUTTONUP if rt.switcher.as_ref().is_some_and(|o| o.hwnd() == msg.hwnd) => {
+                    let (x, y) = (msg.lParam.0 as i16 as i32, (msg.lParam.0 >> 16) as i16 as i32);
+                    if rt.switcher.as_mut().is_some_and(|o| o.pick(x, y)) {
+                        SWITCH_KEYS.with(|k| k.borrow_mut().as_mut().map(Switch::close));
+                        rt.switch(Act::Commit);
+                    }
+                }
                 _ => {
                     DispatchMessageW(&msg);
                 }
@@ -341,6 +380,11 @@ pub fn hold(
                     EVENT_OBJECT_SHOW | EVENT_OBJECT_NAMECHANGE => rt.refresh(HWND(hwnd as *mut c_void)),
                     XRAY => rt.set_xray(hwnd != 0),
                     CHORD => rt.fire(hwnd as usize),
+                    SWITCH => {
+                        if let Some(act) = Act::decode(hwnd) {
+                            rt.switch(act);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -357,6 +401,8 @@ pub fn hold(
             let _ = UnhookWindowsHookEx(k);
         }
         rt.xray_on = false;
+        rt.switcher = None;
+        SWITCH_KEYS.with(|k| *k.borrow_mut() = None);
         rt.restore_all();
         if let Some((_, overlay)) = rt.focus.take() {
             let _ = DestroyWindow(overlay);
@@ -391,9 +437,9 @@ fn create_overlay(color: u32, alpha: u8) -> io::Result<HWND> {
             lpszClassName: w!("noren.focus"),
             ..Default::default()
         };
-        if RegisterClassW(&class) == 0 {
+        if let Err(e) = register_class(&class) {
             let _ = DeleteObject(brush.into());
-            return Err(io::Error::last_os_error());
+            return Err(e);
         }
         let hwnd = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
@@ -421,6 +467,14 @@ unsafe extern "system" fn on_key(code: i32, wparam: WPARAM, lparam: LPARAM) -> L
         let kb = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
         let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
         let mut swallow = false;
+        let step = SWITCH_KEYS.with(|k| k.borrow_mut().as_mut().map(|k| k.event(kb.vkCode, down)));
+        if let Some(step) = step {
+            if let Some(act) = step.act {
+                QUEUE.with(|q| q.borrow_mut().push((SWITCH, act.encode())));
+                wake();
+            }
+            swallow |= step.swallow;
+        }
         let step = HOLD.with(|h| h.borrow_mut().as_mut().map(|h| h.event(kb.vkCode, down)));
         if let Some(step) = step {
             if let Some(on) = step.changed {
@@ -484,7 +538,19 @@ unsafe extern "system" fn collect_window(hwnd: HWND, data: LPARAM) -> BOOL {
     true.into()
 }
 
-fn top_level_windows() -> Vec<HWND> {
+/// Registers a window class, accepting one left by an earlier runtime in this process.
+pub(super) fn register_class(class: &WNDCLASSW) -> io::Result<()> {
+    // SAFETY: `class` is fully initialized and its strings are static.
+    let atom = unsafe { RegisterClassW(class) };
+    let error = io::Error::last_os_error();
+    if super::class_registered(atom, error.raw_os_error().unwrap_or(0)) {
+        Ok(())
+    } else {
+        Err(error)
+    }
+}
+
+pub(super) fn top_level_windows() -> Vec<HWND> {
     let mut out: Vec<HWND> = Vec::new();
     // SAFETY: synchronous enumeration; the callback only borrows `out`.
     unsafe {
@@ -643,6 +709,26 @@ impl Runtime {
             .collect();
         for h in dead {
             self.forget(h);
+        }
+    }
+
+    /// Runs one switcher step from the keyboard hook, a lost key-up or a click.
+    fn switch(&mut self, act: Act) {
+        let theme = self.palette.theme(Theme::aizome());
+        let Some(overlay) = self.switcher.as_mut() else {
+            return;
+        };
+        match act {
+            Act::Open { back } => overlay.open(theme, back),
+            Act::Move(by) => overlay.move_by(by),
+            Act::Commit => {
+                if let Some(hwnd) = overlay.close() {
+                    activate(hwnd);
+                }
+            }
+            Act::Cancel => {
+                overlay.close();
+            }
         }
     }
 
@@ -972,6 +1058,7 @@ pub fn list() -> Vec<WindowInfo> {
         layers: None,
         frame: 0,
         schedule: None,
+        switcher: None,
     };
     top_level_windows()
         .into_iter()

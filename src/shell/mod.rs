@@ -2,8 +2,8 @@
 //! must be held while noren runs: window rules (`[[window]]` in a profile), named states for
 //! state-colored borders, focus dimming (`[focus]`), the x-ray hold key (`[xray]`), commands
 //! on leader-key chords and hot corners (`[[command]]`, see [`command`]), and edge glows that
-//! show a state (`[[glow]]`, see [`glow`]), and the dark/light schedule (`[schedule]`, see
-//! [`schedule`]).
+//! show a state (`[[glow]]`, see [`glow`]), the dark/light schedule (`[schedule]`, see
+//! [`schedule`]), and the Alt+Tab replacement (`[switcher]`, see [`switcher`]).
 //!
 //! Nothing here is persistent. `noren run` applies the rules to every window, follows new
 //! windows and state changes, and on exit puts every touched window back as it was.
@@ -17,6 +17,9 @@ pub mod keys;
 pub mod rules;
 pub mod schedule;
 pub mod state;
+pub mod switcher;
+#[cfg(windows)]
+mod switcher_win;
 #[cfg(windows)]
 mod win;
 
@@ -34,6 +37,16 @@ pub use state::State;
 
 use crate::rice::Profile;
 
+/// `ERROR_CLASS_ALREADY_EXISTS`: a window class registered by an earlier runtime in this
+/// process (the studio stops and starts Live), still valid for the same window procedure.
+const CLASS_ALREADY_EXISTS: i32 = 1410;
+
+/// Whether `RegisterClassW` succeeded, given its atom and, when that is 0, the last error.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn class_registered(atom: u16, last_error: i32) -> bool {
+    atom != 0 || last_error == CLASS_ALREADY_EXISTS
+}
+
 #[cfg(not(windows))]
 fn unsupported(what: &str) -> io::Error {
     io::Error::new(io::ErrorKind::Unsupported, format!("{what} needs Windows"))
@@ -48,6 +61,8 @@ pub struct Live {
     pub glows: Vec<Glow>,
     /// Switches the profile between dark and light (`[schedule]`).
     pub schedule: Option<schedule::Tracker>,
+    /// The Alt+Tab replacement (`[switcher]`).
+    pub switcher: Option<switcher::Switcher>,
     /// The profile, re-applied in the scheduled mode.
     pub profile: Profile,
     /// The profile as TOML, handed to the command palette.
@@ -68,6 +83,11 @@ impl Live {
                 .map(schedule::Schedule::new)
                 .transpose()?
                 .map(schedule::Tracker::new),
+            switcher: profile
+                .switcher
+                .as_ref()
+                .map(switcher::Switcher::new)
+                .transpose()?,
             profile: profile.clone(),
             source: toml::to_string(profile).map_err(|e| e.to_string())?,
         };
@@ -77,9 +97,10 @@ impl Live {
             && !live.commands.bound()
             && live.glows.is_empty()
             && live.schedule.is_none()
+            && live.switcher.is_none()
         {
             return Err(
-                "the profile has no [[window]] rules, [focus], [xray], chords, hot corners, [[glow]] or [schedule], nothing to run"
+                "the profile has no [[window]] rules, [focus], [xray], chords, hot corners, [[glow]], [schedule] or [switcher], nothing to run"
                     .into(),
             );
         }
@@ -177,6 +198,13 @@ pub fn windows() -> io::Result<Vec<WindowInfo>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_class_left_by_an_earlier_runtime_counts_as_registered() {
+        assert!(class_registered(0xC001, 0));
+        assert!(class_registered(0, CLASS_ALREADY_EXISTS));
+        assert!(!class_registered(0, 87));
+    }
 
     fn live(extra: &str) -> Result<Live, String> {
         Live::new(&Profile::parse(&format!(

@@ -240,6 +240,16 @@ longitude = 21.01              # wschód na plusie
 
 Gdy `noren run` albo karta Live w studiu trzyma profil, przełącza `[palette] mode` o tych godzinach. Żywe okna od razu dostają nową paletę, a statyczne cele profilu (Windows, Terminal, VS Code, Firefox) są stosowane ponownie jako jedna transakcja w dzienniku, więc `noren rollback` cofa kolejne przełączenia. Godziny słońca liczy równanie wschodu NOAA, z dokładnością do kilku minut. Tam, gdzie słońce danego dnia nie wschodzi albo nie zachodzi, cały dzień zostaje ciemny albo jasny. `noren schedule <profile.toml>` wypisuje dzisiejsze godziny.
 
+### Przełącznik okien
+
+```toml
+[switcher]
+key = "Alt+Tab"                # domyślnie; z Shiftem idzie wstecz
+thumbnails = true              # żywe miniatury DWM; false pokazuje same karty z tytułem
+```
+
+Gdy `noren run` albo karta Live w studiu trzyma profil, klawisz otwiera siatkę okien, które pokazałby systemowy Alt+Tab, od ostatnio używanego, każde z żywą miniaturą, tytułem i programem. Kolejne naciśnięcie klawisza (albo strzałki) przesuwa wybór, puszczenie modyfikatora albo Enter przełącza, Esc anuluje, można też kliknąć kartę. Siatka pojawia się na monitorze okna z przodu, bierze kolory z palety i nigdy nie zabiera fokusu, więc opuszczane okno trzyma go do chwili przełączenia.
+
 ## FAQ
 
 **Zepsuje mi ustawienia?** Przed zapisem noren zapisuje w `%LOCALAPPDATA%\noren\journal` każdą wartość, którą zaraz nadpisze. Jeśli któryś zapis się nie uda, wykonane już zapisy są cofane. `noren rollback` przywraca poprzednie bajty co do jednego. W teście end-to-end `settings.json` VS Code wrócił identyczny bajt w bajt po apply i rollback.
@@ -417,7 +427,7 @@ noren diff <profile.toml>                            # co zmieni apply
 noren apply <profile.toml>                           # zastosuj jako jedną transakcję
 noren rollback [--force]                             # cofnij najnowszą transakcję
 noren log                                            # lista transakcji
-noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule] do Ctrl+C
+noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule], [switcher] do Ctrl+C
 noren schedule <profile.toml>                        # dzisiejsze godziny przełączenia ciemny/jasny
 noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]], [media] i [[layout]]
 noren card <profile.toml> <out.png> [--scale <s>]    # profil jako PNG do udostępnienia
@@ -448,16 +458,17 @@ W planach:
 - [x] Motyw zależny od pory dnia i wschodu słońca
 - [x] Poświata krawędzi ekranu jako status
 - [x] Akordy leader-key, paleta komend, gorące rogi
-- [ ] Zamiennik Alt+Tab z żywymi miniaturami
+- [x] Zamiennik Alt+Tab z żywymi miniaturami
 - [x] Widżet multimediów z motywem z okładki
 - [ ] Przestylowane powiadomienia
 - [x] Karta rice'a do udostępnienia jako PNG
 
 ## Ograniczenia
 
-- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi i przełączania według harmonogramu. Zgłoszenia mile widziane.
+- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi, przełączania według harmonogramu i przełącznika okien. Zgłoszenia mile widziane.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
+- Przełącznik okien nie słyszy klawiszy, gdy fokus ma okno uruchomione jako administrator (Windows nie daje tam hooka klawiatury zwykłemu procesowi), więc tam otwiera się systemowy Alt+Tab.
 - Poświaty to okna topmost, ale pasek zadań i tak może rysować się nad poświatą na swojej krawędzi.
 - `noren run` musi działać, żeby reguły okien się trzymały. Zabity bez Ctrl+C zostawia okna w swoim stylu, dopóki się nie zamkną.
 - Firefox ignoruje `userChrome.css` do restartu. VS Code i Windows Terminal przeładowują się same.

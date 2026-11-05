@@ -11,9 +11,9 @@ use windows::Win32::Graphics::Gdi::{AC_SRC_ALPHA, AC_SRC_OVER, BLENDFUNCTION, HM
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE, ShowWindow,
-    ULW_ALPHA, UpdateLayeredWindow, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, SW_HIDE, SW_SHOWNOACTIVATE, ShowWindow, ULW_ALPHA,
+    UpdateLayeredWindow, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::w;
 
@@ -67,9 +67,7 @@ impl Layers {
                 lpszClassName: w!("noren.glow"),
                 ..Default::default()
             };
-            if RegisterClassW(&class) == 0 {
-                return Err(io::Error::last_os_error());
-            }
+            super::win::register_class(&class)?;
         }
         Ok(Self {
             bands: HashMap::new(),

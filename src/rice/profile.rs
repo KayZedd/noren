@@ -61,6 +61,9 @@
 //! dark = "21:00"
 //! latitude = 52.23
 //! longitude = 21.01
+//!
+//! [switcher]               # Alt+Tab with live thumbnails (see `shell::switcher`)
+//! key = "Alt+Tab"
 //! ```
 //!
 //! Every target accepts `path = "..."` to point at a non-default config file.
@@ -81,6 +84,7 @@ use crate::shell::command::{ChordsConfig, CommandConfig, Commands, CornersConfig
 use crate::shell::focus::{Focus, FocusConfig, Xray, XrayConfig};
 use crate::shell::glow::{self, GlowConfig};
 use crate::shell::schedule::ScheduleConfig;
+use crate::shell::switcher::{Switcher, SwitcherConfig};
 use crate::shell::{Rules, WindowRule};
 
 /// Profile format version this build reads.
@@ -123,6 +127,8 @@ pub struct Profile {
     pub layout: Vec<LayoutConfig>,
     /// Dark and light by the clock or the sun, held by `noren run`.
     pub schedule: Option<ScheduleConfig>,
+    /// The Alt+Tab replacement with live thumbnails, held by `noren run`.
+    pub switcher: Option<SwitcherConfig>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -196,6 +202,7 @@ impl Profile {
         profile.commands()?;
         glow::glows(&profile.glow)?;
         layouts::validate(&profile.layout, &profile.panel_widgets())?;
+        profile.switcher.as_ref().map(Switcher::new).transpose()?;
         Ok(profile)
     }
 
@@ -462,6 +469,22 @@ profile = "ff"
         );
         let bad = Profile::parse(&format!("{base}[[window]]\nopacity = 0.0\n")).unwrap_err();
         assert!(bad.contains("opacity"), "{bad}");
+    }
+
+    #[test]
+    fn the_switcher_parses_with_defaults_and_is_validated() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n";
+        let p = Profile::parse(&format!("{base}[switcher]\n")).unwrap();
+        assert_eq!(p.switcher, Some(SwitcherConfig::default()));
+        let p = Profile::parse(&format!(
+            "{base}[switcher]\nkey = \"Win+Tab\"\nthumbnails = false\n"
+        ))
+        .unwrap();
+        assert!(!p.switcher.unwrap().thumbnails);
+        let bad = Profile::parse(&format!("{base}[switcher]\nkey = \"Alt\"\n")).unwrap_err();
+        assert!(bad.contains("[switcher] key"), "{bad}");
+        let bad = Profile::parse(&format!("{base}[switcher]\nkeys = \"Alt+Tab\"\n")).unwrap_err();
+        assert!(bad.contains("keys"), "{bad}");
     }
 
     #[test]

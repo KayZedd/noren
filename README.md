@@ -240,6 +240,16 @@ longitude = 21.01              # east is positive
 
 While `noren run` or the studio's Live card holds the profile, it switches `[palette] mode` at those times. Live windows take the new palette at once, and the profile's static targets (Windows, Terminal, VS Code, Firefox) are applied again as one journaled transaction, so `noren rollback` steps back through the switches. Sun times use the NOAA sunrise equation and land within a few minutes. Where the sun never rises or never sets that day, the whole day stays dark or light. `noren schedule <profile.toml>` prints today's times.
 
+### Window switcher
+
+```toml
+[switcher]
+key = "Alt+Tab"                # the default; Shift with it goes backwards
+thumbnails = true              # live DWM thumbnails; false shows title cards only
+```
+
+While `noren run` or the studio's Live card holds the profile, the key opens a grid of the windows the system Alt+Tab would list, most recent first, each with a live thumbnail, its title and its program. Tap the key again (or the arrows) to move, release the modifier or press Enter to switch, Esc to cancel, or click a card. The grid sits on the monitor of the window in front, takes the palette's colors and never takes the focus, so the window you leave keeps it until you switch.
+
 ## FAQ
 
 **Will it break my settings?** Before writing, noren journals every value it is about to replace in `%LOCALAPPDATA%\noren\journal`. If any write fails, the ones already done are reverted. `noren rollback` restores the previous bytes exactly. In an end-to-end run, a VS Code `settings.json` came back byte-identical after apply and rollback.
@@ -417,7 +427,7 @@ noren diff <profile.toml>                            # what apply would change
 noren apply <profile.toml>                           # apply as one transaction
 noren rollback [--force]                             # undo the newest transaction
 noren log                                            # list transactions
-noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule] until Ctrl+C
+noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule], [switcher] until Ctrl+C
 noren schedule <profile.toml>                        # today's dark/light switch times
 noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs, [media] and [[layout]]s
 noren card <profile.toml> <out.png> [--scale <s>]    # the profile as a PNG to share
@@ -448,16 +458,17 @@ Planned:
 - [x] Theme by time of day and sunrise
 - [x] Ambient edge glow for status
 - [x] Leader-key chords, command palette, hot corners
-- [ ] Alt+Tab replacement with live thumbnails
+- [x] Alt+Tab replacement with live thumbnails
 - [x] Media widget themed from the cover art
 - [ ] Restyled notifications
 - [x] Shareable rice card PNG
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows and the schedule switch. Reports are welcome.
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch and the window switcher. Reports are welcome.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
+- The window switcher hears no keys while a window running as administrator has the focus (Windows keeps a normal process's keyboard hook from it), so the system Alt+Tab opens there.
 - Edge glows are topmost windows, but the taskbar can still draw over a glow on its edge.
 - `noren run` must keep running for window rules to hold. If it is killed without Ctrl+C, the windows keep their style until they close.
 - Firefox ignores `userChrome.css` until it restarts. VS Code and Windows Terminal reload on their own.
