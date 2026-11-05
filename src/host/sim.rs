@@ -215,6 +215,7 @@ mod tests {
             width: 200.0,
             height: 100.0,
             scale: 2.0,
+            origin: (0, 0),
         };
         let mut sim = Simulator::new(monitor, Color::rgb8(0, 0, 255));
         // Added top first: z-order must still put the desktop surface below.

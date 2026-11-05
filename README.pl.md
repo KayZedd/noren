@@ -402,7 +402,7 @@ height = 40              # 16 do 200, domyślnie 40
 text = "auto"            # "auto" czytelny na tapecie, "palette" zostawia kolor palety
 ```
 
-noren dekoduje tapetę w 256 pikselach i ocenia każdy róg, potem każdą krawędź, po tym, jak bardzo zmienia się jasność i jak ostre są krawędzie; wygrywa najspokojniejsze miejsce, przy remisie prawy górny róg. Przy `text = "auto"` zwykły tekst bierze ten z kolorów tekstu i tła palety, który ma większy kontrast (WCAG) z tapetą pod widżetem; kolory ok, warn i fail zostają. Oba wybory zapadają na nowo, gdy zmieni się plik tapety albo monitor (sprawdzane co 30 s), nie gdy zmieni się tekst, więc widżet nie wędruje. Widżet ma `glue` albo `desktop`, nie oba.
+noren czyta tapetę każdego monitora osobno, dekoduje ją w 256 pikselach i układa tak, jak pokazuje ją Windows: wypełnienie, dopasowanie, rozciągnięcie, wyśrodkowanie, sąsiadująco albo rozpiętość, z kolorem tła tam, gdzie obraz nie sięga. Ocenia każdy róg, potem każdą krawędź, po tym, jak bardzo zmienia się jasność i jak ostre są krawędzie; wygrywa najspokojniejsze miejsce, przy remisie prawy górny róg. Przy `text = "auto"` zwykły tekst bierze ten z kolorów tekstu i tła palety, który ma większy kontrast (WCAG) z tapetą pod widżetem; kolory ok, warn i fail zostają. Oba wybory zapadają na nowo, gdy zmieni się tapeta, jej dopasowanie albo monitor (jeden wątek sprawdza co 30 s dla wszystkich widżetów na pulpicie), nie gdy zmieni się tekst, więc widżet nie wędruje. Widżet ma `glue` albo `desktop`, nie oba.
 
 ### Powiadomienia
 
@@ -514,7 +514,6 @@ noren <komenda> --state-dir <katalog>                # stany w innym miejscu
 
 ## Roadmapa
 
-Zrobione:
 - [x] Rice jako wersjonowany plik TOML
 - [x] Transakcyjne apply, diff i rollback
 - [x] Jedna paleta wypychana do wszystkich celów
@@ -522,8 +521,6 @@ Zrobione:
 - [x] Kolor ramki okna ze stanu (build padł, git brudny) przez `noren state <nazwa> <ok|fail|warn|busy>`
 - [x] Przyciemnianie poza fokusem i klawisz x-ray
 - [x] noren studio: aplikacja do zarządzania z ikoną w zasobniku
-
-W planach:
 - [x] Każdy program wypisujący JSON jest widżetem
 - [x] Widżety przyklejone do okien innych aplikacji
 - [x] Żywe lustra miniatur DWM
@@ -540,7 +537,7 @@ W planach:
 ## Ograniczenia
 
 - **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi, przełączania według harmonogramu, przełącznika okien, luster okien, przyklejonych widżetów, widżetów na pulpicie i powiadomień. Zgłoszenia mile widziane.
-- Widżety na pulpicie czytają tapetę tak, jak pokazuje ją dopasowanie "Wypełnienie" Windowsa, i biorą ten sam obraz na każdy monitor; inne dopasowania, pokaz slajdów między sprawdzeniami i osobne tapety na monitorach mogą postawić je w bardziej zajętym miejscu.
+- Widżety na pulpicie widzą kolejny obraz pokazu slajdów przy następnym sprawdzeniu, do 30 s później. Tapeta, której nie da się zdekodować, zostawia widżety na swoim monitorze tam, gdzie były.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
 - Przełącznik okien nie słyszy klawiszy, gdy fokus ma okno uruchomione jako administrator (Windows nie daje tam hooka klawiatury zwykłemu procesowi), więc tam otwiera się systemowy Alt+Tab.

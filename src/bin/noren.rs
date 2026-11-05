@@ -136,6 +136,7 @@ fn screenshot(mut panel: noren::Panel, path: &std::path::Path) -> Result<(), Str
             width: 1280.0,
             height: 720.0,
             scale: 1.0,
+            origin: (0, 0),
         },
         background,
     );

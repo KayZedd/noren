@@ -89,6 +89,7 @@ impl Display {
             width: self.width as f32 / self.scale,
             height: self.height as f32 / self.scale,
             scale: self.scale,
+            origin: (self.left, self.top),
         }
     }
 

@@ -30,6 +30,7 @@ pub fn run(entries: Vec<Entry>, width: f32, height: f32, background: Color) -> R
             width,
             height,
             scale: 1.0,
+            origin: (0, 0),
         },
         background,
     );
@@ -76,6 +77,7 @@ impl App {
             width: size.width.max(1) as f32 / scale,
             height: size.height.max(1) as f32 / scale,
             scale,
+            origin: (0, 0),
         });
     }
 

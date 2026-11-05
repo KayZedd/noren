@@ -402,7 +402,7 @@ height = 40              # 16 to 200, default 40
 text = "auto"            # "auto" reads on the wallpaper, "palette" keeps the palette's
 ```
 
-noren decodes the wallpaper at 256 pixels and scores each corner, then each edge, by how much its brightness varies and how sharp its edges are; the calmest wins, the top right on a tie. With `text = "auto"` plain text takes whichever of the palette's text and background colors has more contrast (WCAG) with the wallpaper under the widget; ok, warn and fail colors stay. Both are picked again when the wallpaper file or the monitor changes (checked every 30 s), not when the text does, so the widget does not wander. A widget can have `glue` or `desktop`, not both.
+noren reads each monitor's own wallpaper, decodes it at 256 pixels and lays it out the way Windows shows it: fill, fit, stretch, center, tile or span, with the background color where the picture does not reach. It scores each corner, then each edge, by how much its brightness varies and how sharp its edges are; the calmest wins, the top right on a tie. With `text = "auto"` plain text takes whichever of the palette's text and background colors has more contrast (WCAG) with the wallpaper under the widget; ok, warn and fail colors stay. Both are picked again when the wallpaper, its fit or the monitor changes (one thread checks every 30 s for all desktop widgets), not when the text does, so the widget does not wander. A widget can have `glue` or `desktop`, not both.
 
 ### Notifications
 
@@ -514,7 +514,6 @@ noren <command> --state-dir <dir>                    # states somewhere else
 
 ## Roadmap
 
-Done:
 - [x] Rice as a versioned TOML file
 - [x] Transactional apply, diff and rollback
 - [x] One palette pushed to every target
@@ -522,8 +521,6 @@ Done:
 - [x] Window border color from state (build failed, git dirty) via `noren state <name> <ok|fail|warn|busy>`
 - [x] Focus dimming and an x-ray hold key
 - [x] noren studio: management app with a tray icon
-
-Planned:
 - [x] Any program printing JSON is a widget
 - [x] Widgets glued to other apps' windows
 - [x] Live DWM thumbnail mirrors
@@ -540,7 +537,7 @@ Planned:
 ## Limitations
 
 - **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch, the window switcher, window mirrors, glued widgets, desktop widgets and notifications. Reports are welcome.
-- Desktop widgets read the wallpaper as Windows' "Fill" fit shows it and use the same image on every monitor; other fits, slideshows between checks and per-monitor wallpapers can put them on a busier spot.
+- Desktop widgets see a slideshow's next picture at the next check, up to 30 s later. A wallpaper that fails to decode leaves the widgets on its monitor where they were.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
 - The window switcher hears no keys while a window running as administrator has the focus (Windows keeps a normal process's keyboard hook from it), so the system Alt+Tab opens there.

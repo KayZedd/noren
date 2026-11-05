@@ -507,6 +507,7 @@ mod tests {
             width: 1600.0,
             height: 900.0,
             scale: 1.0,
+            origin: (0, 0),
         });
         let now = Instant::now();
         s.tick(now, None, false);

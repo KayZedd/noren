@@ -19,6 +19,8 @@ pub struct MonitorInfo {
     pub width: f32,
     pub height: f32,
     pub scale: f32,
+    /// The monitor's top left corner in physical desktop pixels, telling monitors apart.
+    pub origin: (i32, i32),
 }
 
 /// Z-order band of a surface window.
@@ -236,6 +238,7 @@ impl<V: View> Floating<V> {
                 width: 1920.0,
                 height: 1080.0,
                 scale: 1.0,
+                origin: (0, 0),
             },
             frame: None,
             pointer: None,
@@ -442,6 +445,7 @@ mod tests {
             width: 200.0,
             height: 100.0,
             scale: 1.0,
+            origin: (0, 0),
         });
         assert!(s.tick(now, None, false).redraw);
         let p = s.placement(now);

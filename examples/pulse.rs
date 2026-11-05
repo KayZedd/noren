@@ -619,6 +619,7 @@ fn screenshot(mut panel: Panel, path: &Path, args: &Args, wallpaper: Color) -> R
             width: 1280.0,
             height: 720.0,
             scale: args.scale,
+            origin: (0, 0),
         },
         wallpaper,
     );

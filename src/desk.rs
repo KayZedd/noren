@@ -32,7 +32,7 @@ use crate::exec::{ExecWidget, Msg};
 use crate::surface::{
     Anchor, Floating, FloatingConfig, Layer, MonitorInfo, Placement, Response, Surface, View, ViewContext,
 };
-use crate::wallpaper::{AUTO_ANCHORS, Source, Wallpaper, readable};
+use crate::wallpaper::{AUTO_ANCHORS, Desktop, Source, readable};
 use crate::widget::{Command, Context, Widget};
 use crate::{Color, Element, Rect, Theme, row};
 
@@ -155,7 +155,7 @@ pub struct OnWallpaper {
     config: DeskConfig,
     choices: [Color; 2],
     source: Box<dyn Source>,
-    wallpaper: Option<Arc<Wallpaper>>,
+    desktop: Option<Arc<Desktop>>,
     monitor: MonitorInfo,
     /// The anchor and text color need picking again.
     stale: bool,
@@ -176,11 +176,12 @@ impl OnWallpaper {
             config,
             choices,
             source,
-            wallpaper: None,
+            desktop: None,
             monitor: MonitorInfo {
                 width: 1920.0,
                 height: 1080.0,
                 scale: 1.0,
+                origin: (0, 0),
             },
             stale: true,
         }
@@ -194,7 +195,7 @@ impl OnWallpaper {
     /// when there is nothing to pick from yet.
     fn pick(&mut self, now: Instant) -> bool {
         let rect = self.inner.placement(now).rect;
-        let Some(wp) = self.wallpaper.clone() else {
+        let Some(shown) = self.desktop.as_ref().and_then(|d| d.shown(&self.monitor)) else {
             return false;
         };
         if rect.is_empty() {
@@ -205,13 +206,13 @@ impl OnWallpaper {
         let anchor = self
             .config
             .anchor
-            .or_else(|| wp.calmest(screen, size, self.config.offset, &AUTO_ANCHORS))
+            .or_else(|| shown.calmest(size, self.config.offset, &AUTO_ANCHORS))
             .unwrap_or(AUTO_ANCHORS[0]);
         self.inner.set_anchor(anchor);
         if self.config.text == TextFrom::Auto {
             let (x, y) = anchor.place(screen, size, self.config.offset);
-            let text = wp
-                .region(screen, Rect::new(x, y, size.0, size.1))
+            let text = shown
+                .region(Rect::new(x, y, size.0, size.1))
                 .and_then(|r| readable(r.mean, &self.choices));
             self.inner.view_mut().text = text;
         }
@@ -227,8 +228,8 @@ impl Surface for OnWallpaper {
     }
 
     fn tick(&mut self, now: Instant, pointer: Option<(f32, f32)>, fullscreen: bool) -> Response {
-        if let Some(wp) = self.source.poll() {
-            self.wallpaper = Some(wp);
+        if let Some(d) = self.source.poll() {
+            self.desktop = Some(d);
             self.stale = true;
         }
         let r = self.inner.tick(now, pointer, fullscreen);
@@ -263,7 +264,7 @@ impl Surface for OnWallpaper {
 mod tests {
     use super::*;
     use crate::exec::ExecConfig;
-    use crate::wallpaper::Fixed;
+    use crate::wallpaper::{Fit, Fixed, Hub, Screen, Wallpaper};
 
     fn config(toml: &str) -> Result<DeskConfig, String> {
         let c: DeskConfig = toml::from_str(toml).map_err(|e| e.to_string())?;
@@ -290,24 +291,43 @@ mod tests {
         }
     }
 
-    /// 32x18 (16:9): left half white, right half a busy black and white checkerboard.
-    fn bright_left() -> Wallpaper {
+    /// 32x18 (16:9): one half white, the other a busy black and white checkerboard.
+    fn half_white(white_left: bool) -> Arc<Wallpaper> {
         let (w, h) = (32u32, 18u32);
         let mut rgba = Vec::new();
         for y in 0..h {
             for x in 0..w {
-                let v = if x < w / 2 || (x + y) % 2 == 0 { 250 } else { 5 };
+                let white = (x < w / 2) == white_left;
+                let v = if white || (x + y) % 2 == 0 { 250 } else { 5 };
                 rgba.extend_from_slice(&[v, v, v, 255]);
             }
         }
-        Wallpaper {
+        Arc::new(Wallpaper {
             width: w,
             height: h,
             rgba,
+            source: (w, h),
+        })
+    }
+
+    fn bright_left() -> Option<Arc<Desktop>> {
+        Some(Arc::new(Desktop::uniform(
+            Some(half_white(true)),
+            Fit::Fill,
+            Color::BLACK,
+        )))
+    }
+
+    fn monitor(origin: (i32, i32)) -> MonitorInfo {
+        MonitorInfo {
+            width: 1600.0,
+            height: 900.0,
+            scale: 1.0,
+            origin,
         }
     }
 
-    fn surface(desk: DeskConfig, wallpaper: Option<Wallpaper>) -> OnWallpaper {
+    fn on(desk: DeskConfig, source: Box<dyn Source>, at: MonitorInfo) -> OnWallpaper {
         let exec = ExecConfig {
             name: "w".into(),
             run: vec!["noren-test-no-such-program".into()],
@@ -318,20 +338,19 @@ mod tests {
         };
         let widget = ExecWidget::spawn(exec).unwrap();
         let theme = Theme::aizome();
-        let source = Box::new(Fixed::new(wallpaper.map(Arc::new)));
         let mut s = OnWallpaper::new(Desk::new(widget, desk.height), desk, theme, source);
-        s.set_monitor(MonitorInfo {
-            width: 1600.0,
-            height: 900.0,
-            scale: 1.0,
-        });
+        s.set_monitor(at);
         s
+    }
+
+    fn surface(desk: DeskConfig, desktop: Option<Arc<Desktop>>) -> OnWallpaper {
+        on(desk, Box::new(Fixed::new(desktop)), monitor((0, 0)))
     }
 
     #[test]
     fn auto_placement_takes_the_calm_side_and_dark_text_on_light() {
         let theme = Theme::aizome();
-        let mut s = surface(DeskConfig::default(), Some(bright_left()));
+        let mut s = surface(DeskConfig::default(), bright_left());
         let now = Instant::now();
         assert!(s.tick(now, None, false).redraw);
         let p = s.placement(now);
@@ -349,7 +368,7 @@ mod tests {
     #[test]
     fn a_fixed_anchor_and_palette_text_are_kept() {
         let desk = config("anchor = \"bottom_right\"\ntext = \"palette\"").unwrap();
-        let mut s = surface(desk, Some(bright_left()));
+        let mut s = surface(desk, bright_left());
         let now = Instant::now();
         s.tick(now, None, false);
         let p = s.placement(now);
@@ -366,5 +385,40 @@ mod tests {
         let p = s.placement(now);
         assert_eq!(p.rect.x + p.rect.w, 1600.0 - 32.0, "{p:?}");
         assert_eq!(s.desk().text(), None);
+    }
+
+    #[test]
+    fn widgets_sharing_one_hub_read_their_own_monitors_wallpaper() {
+        // Left monitor: white on the left. Right monitor: white on the right.
+        let hub = Hub::new();
+        let mut left = on(DeskConfig::default(), Box::new(hub.subscribe()), monitor((0, 0)));
+        let mut right = on(
+            DeskConfig::default(),
+            Box::new(hub.subscribe()),
+            monitor((1600, 0)),
+        );
+        let now = Instant::now();
+        left.tick(now, None, false);
+        assert_eq!(left.desk().text(), None, "nothing published yet");
+        hub.publish(Desktop {
+            screens: vec![
+                Screen {
+                    rect: Some((0, 0, 1600, 900)),
+                    image: Some(half_white(true)),
+                },
+                Screen {
+                    rect: Some((1600, 0, 1600, 900)),
+                    image: Some(half_white(false)),
+                },
+            ],
+            fit: Fit::Fill,
+            background: Color::BLACK,
+        });
+        assert!(left.tick(now, None, false).redraw);
+        assert!(right.tick(now, None, false).redraw);
+        let (l, r) = (left.placement(now), right.placement(now));
+        assert_eq!(l.rect.x, 32.0, "{l:?}");
+        assert_eq!(r.rect.x + r.rect.w, 1600.0 - 32.0, "{r:?}");
+        assert!(left.desk().text().is_some() && right.desk().text().is_some());
     }
 }

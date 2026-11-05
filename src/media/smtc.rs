@@ -65,6 +65,16 @@ pub(crate) fn decode_stream(
     stream: &IRandomAccessStream,
     side: u32,
 ) -> windows::core::Result<(u32, u32, Vec<u8>)> {
+    let (_, (w, h), rgba) = decode_sized(stream, side)?;
+    Ok((w, h, rgba))
+}
+
+/// Source size, decoded size and RGBA pixels.
+pub(crate) type Decoded = ((u32, u32), (u32, u32), Vec<u8>);
+
+/// Like [`decode_stream`], also handing back the image's own size before scaling:
+/// `(source, decoded, rgba)`.
+pub(crate) fn decode_sized(stream: &IRandomAccessStream, side: u32) -> windows::core::Result<Decoded> {
     let decoder = BitmapDecoder::CreateAsync(stream)?.join()?;
     let (w, h) = (decoder.OrientedPixelWidth()?, decoder.OrientedPixelHeight()?);
     let scale = (side as f32 / w.max(h).max(1) as f32).min(1.0);
@@ -86,7 +96,7 @@ pub(crate) fn decode_stream(
         )?
         .join()?
         .DetachPixelData()?;
-    Ok((sw, sh, pixels.to_vec()))
+    Ok(((w, h), (sw, sh), pixels.to_vec()))
 }
 
 impl Player for Smtc {

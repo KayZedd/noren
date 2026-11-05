@@ -107,6 +107,7 @@ fn main() -> Result<(), String> {
             width: 640.0,
             height: 400.0,
             scale: 1.0,
+            origin: (0, 0),
         },
         background,
     );

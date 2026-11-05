@@ -246,6 +246,7 @@ mod tests {
             width: 800.0,
             height: 600.0,
             scale: 1.0,
+            origin: (0, 0),
         });
         let start = Instant::now();
         let placement = loop {
