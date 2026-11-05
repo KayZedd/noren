@@ -32,6 +32,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::components::{caption, ring};
+use crate::glue::{Glue, GlueConfig, Glued};
 use crate::widget::{Command, Context, Widget};
 use crate::{Color, Element, Theme, column, row, text};
 
@@ -51,6 +52,9 @@ pub struct ExecConfig {
     pub interval: Option<f64>,
     /// Started (and not waited for) when the widget is clicked, instead of opening the popup.
     pub on_click: Option<Vec<String>>,
+    /// Ride on another app's window instead of the panel (see [`crate::glue`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glue: Option<GlueConfig>,
 }
 
 impl ExecConfig {
@@ -73,6 +77,9 @@ impl ExecConfig {
             && !(i.is_finite() && i >= MIN_INTERVAL)
         {
             return Err(format!("{who}: interval must be at least {MIN_INTERVAL} seconds"));
+        }
+        if let Some(g) = &self.glue {
+            Glue::new(&who, g)?;
         }
         Ok(())
     }
@@ -296,17 +303,40 @@ fn kill(child: &Mutex<Option<Child>>) {
 
 /// Adds one widget per config to `panel`. Names must be unique: they are the widgets' ids.
 /// Nothing is added when a config is invalid.
-pub fn add(panel: &mut crate::Panel, configs: &[ExecConfig]) -> Result<(), String> {
+/// Checks every config and that names are unique.
+pub fn validate(configs: &[ExecConfig]) -> Result<(), String> {
     for (i, c) in configs.iter().enumerate() {
         if configs[..i].iter().any(|o| o.name == c.name) {
             return Err(format!("two widgets are named {:?}", c.name));
         }
         c.validate()?;
     }
-    for c in configs {
+    Ok(())
+}
+
+/// Adds the widgets that are not glued to a window to the panel.
+pub fn add(panel: &mut crate::Panel, configs: &[ExecConfig]) -> Result<(), String> {
+    validate(configs)?;
+    for c in configs.iter().filter(|c| c.glue.is_none()) {
         panel.add(ExecWidget::spawn(c.clone())?);
     }
     Ok(())
+}
+
+/// Starts the glued widgets, each as its own surface with where it goes.
+pub fn glued(
+    configs: &[ExecConfig],
+    theme: &Theme,
+) -> Result<Vec<(crate::Floating<Glued>, GlueConfig)>, String> {
+    validate(configs)?;
+    configs
+        .iter()
+        .filter_map(|c| c.glue.clone().map(|g| (c, g)))
+        .map(|(c, g)| {
+            let widget = ExecWidget::spawn(c.clone())?;
+            Ok((Glued::new(widget, g.height).surface(theme.clone()), g))
+        })
+        .collect()
 }
 
 /// A widget fed by a program.
@@ -452,6 +482,7 @@ mod tests {
             run: run.iter().map(|s| s.to_string()).collect(),
             interval,
             on_click: None,
+            glue: None,
         }
     }
 
@@ -552,6 +583,28 @@ mod tests {
         let e = add(&mut panel, &twins).err().unwrap();
         assert!(e.contains("two widgets"), "{e}");
         assert!(add(&mut panel, &[config(&["x"], Some(0.0))]).is_err());
+    }
+
+    #[test]
+    fn only_glued_widgets_get_their_own_surface_and_bad_glue_is_named() {
+        let glue = |exe: Option<&str>| GlueConfig {
+            exe: exe.map(Into::into),
+            ..Default::default()
+        };
+        let stuck = ExecConfig {
+            name: "stuck".into(),
+            glue: Some(glue(Some("Code.exe"))),
+            ..config(&["x"], Some(60.0))
+        };
+        let surfaces = glued(&[config(&["x"], Some(60.0)), stuck.clone()], &Theme::aizome()).unwrap();
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(surfaces[0].1.exe.as_deref(), Some("Code.exe"));
+        let unanchored = ExecConfig {
+            glue: Some(glue(None)),
+            ..stuck
+        };
+        let e = unanchored.validate().err().unwrap();
+        assert!(e.contains("widget \"stuck\": glue needs exe"), "{e}");
     }
 
     #[test]

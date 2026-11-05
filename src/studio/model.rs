@@ -51,6 +51,9 @@ border = "accent.7"
 # name = "weather"
 # run = ["curl", "-s", "wttr.in/?format=%t"]
 # interval = 600
+# [widget.glue]          # optional: ride on an app's window instead of the panel
+# exe = "Code.exe"
+# anchor = "top_right"
 
 # [media]                # now playing on `noren panel`, colored from the album cover
 # cover_colors = true

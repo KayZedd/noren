@@ -28,20 +28,24 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_HREDRAW, CS_VREDRAW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
-    DestroyWindow, DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GWLP_USERDATA, GetClassNameW, GetCursorPos,
-    GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOPMOST,
-    IDC_ARROW, LoadCursorW, MA_NOACTIVATE, MB_ICONERROR, MB_OK, MF_STRING, MONITORINFOF_PRIMARY, MSG,
-    MessageBoxW, MsgWaitForMultipleObjects, PM_REMOVE, PeekMessageW, QS_ALLINPUT, RegisterClassW, SW_HIDE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateMessage, ULW_ALPHA, UpdateLayeredWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_APP, WM_CLOSE,
-    WM_DISPLAYCHANGE, WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONDOWN, WM_MOUSEACTIVATE, WM_MOUSEWHEEL,
-    WM_RBUTTONUP, WM_SETTINGCHANGE, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CAPTION, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WindowFromPoint,
+    DestroyWindow, DispatchMessageW, GW_HWNDPREV, GWL_EXSTYLE, GWL_STYLE, GWLP_USERDATA, GetClassNameW,
+    GetCursorPos, GetForegroundWindow, GetWindow, GetWindowLongPtrW, GetWindowRect, HWND_BOTTOM,
+    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IDC_ARROW, LoadCursorW, MA_NOACTIVATE, MB_ICONERROR, MB_OK,
+    MF_STRING, MONITORINFOF_PRIMARY, MSG, MessageBoxW, MsgWaitForMultipleObjects, PM_REMOVE, PeekMessageW,
+    QS_ALLINPUT, RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, ULW_ALPHA, UpdateLayeredWindow, WINDOW_EX_STYLE,
+    WINDOWPOS, WM_APP, WM_CLOSE, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONDOWN,
+    WM_MOUSEACTIVATE, WM_MOUSEWHEEL, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_WINDOWPOSCHANGING, WNDCLASSW,
+    WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
+    WS_POPUP, WindowFromPoint,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
-use super::{Display, Entry, SurfaceOptions, rgba_to_bgra, select_display};
+use super::{Display, Entry, SurfaceOptions, display_at, rgba_to_bgra, select_display, window_to_logical};
+use crate::Rect;
+use crate::glue::Glue;
+use crate::shell::{find_window, shown_frame};
 use crate::surface::{Layer, Placement, Response, Surface};
 
 const CLASS: PCWSTR = w!("noren.surface");
@@ -52,6 +56,10 @@ const WHEEL_STEP: f32 = 48.0;
 const FRAME: Duration = Duration::from_millis(16);
 const IDLE: Duration = Duration::from_millis(50);
 const MONITOR_CHECK: Duration = Duration::from_secs(1);
+/// How often a glued widget looks for its window while it has none on screen.
+const GLUE_SEARCH: Duration = Duration::from_millis(500);
+/// `GWLP_USERDATA` of a glued widget's window: never activated, z-order kept by the host.
+const GLUED: isize = 4;
 
 /// Input collected by the window procedure, handled by the main loop outside the callback.
 enum Event {
@@ -85,7 +93,7 @@ pub fn run(entries: Vec<Entry>) -> Result<(), String> {
         .into_iter()
         .map(|entry| Host::new(entry, &displays))
         .collect::<Result<Vec<_>, _>>()?;
-    let result = event_loop(&mut hosts);
+    let result = event_loop(&mut hosts, displays);
     drop(hosts);
     if let Err(e) = &result {
         report_error(e);
@@ -93,7 +101,7 @@ pub fn run(entries: Vec<Entry>) -> Result<(), String> {
     result
 }
 
-fn event_loop(hosts: &mut [Host]) -> Result<(), String> {
+fn event_loop(hosts: &mut [Host], mut displays: Vec<Display>) -> Result<(), String> {
     let mut last_tick = Instant::now() - IDLE;
     let mut last_monitor_check = Instant::now();
     let mut last_cursor = None;
@@ -126,14 +134,14 @@ fn event_loop(hosts: &mut [Host]) -> Result<(), String> {
             match event {
                 Event::Click(hwnd, x, y) => {
                     for host in hosts.iter_mut().filter(|h| h.hwnd == hwnd) {
-                        if let Some((lx, ly)) = host.display.to_logical(x, y) {
+                        if let Some((lx, ly)) = host.to_logical(x, y) {
                             quit |= host.handle(|s| s.click(lx, ly, now));
                         }
                     }
                 }
                 Event::Wheel(hwnd, x, y, notches) => {
                     for host in hosts.iter_mut().filter(|h| h.hwnd == hwnd) {
-                        if let Some((lx, ly)) = host.display.to_logical(x, y) {
+                        if let Some((lx, ly)) = host.to_logical(x, y) {
                             quit |= host.handle(|s| s.scroll(lx, ly, -notches * WHEEL_STEP));
                         }
                     }
@@ -151,10 +159,13 @@ fn event_loop(hosts: &mut [Host]) -> Result<(), String> {
 
         if displays_changed || now - last_monitor_check >= MONITOR_CHECK {
             last_monitor_check = now;
-            let displays = monitors()?;
+            displays = monitors()?;
             for host in hosts.iter_mut() {
                 host.check_display(&displays)?;
             }
+        }
+        for host in hosts.iter_mut() {
+            host.follow(now, &displays);
         }
 
         // A button press that does not land on a surface's opaque pixels, or the surface losing
@@ -183,7 +194,7 @@ fn event_loop(hosts: &mut [Host]) -> Result<(), String> {
         if now - last_tick >= FRAME || quit {
             last_tick = now;
             for host in hosts.iter_mut() {
-                let pointer = cursor.and_then(|(x, y)| host.display.to_logical(x, y));
+                let pointer = cursor.and_then(|(x, y)| host.to_logical(x, y));
                 let covered = fullscreen.is_some_and(|r| host.display_covered_by(r));
                 quit |= host.handle(|s| s.tick(now, pointer, covered));
                 if host.surface.animating(now) {
@@ -289,7 +300,8 @@ fn layer_code(layer: Layer) -> isize {
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    let desktop = || unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } == layer_code(Layer::Desktop);
+    let code = || unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) };
+    let desktop = || code() == layer_code(Layer::Desktop);
     match msg {
         WM_LBUTTONDOWN => {
             let mut point = POINT {
@@ -324,7 +336,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             push(Event::Displays);
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
-        WM_MOUSEACTIVATE if desktop() => LRESULT(MA_NOACTIVATE as isize),
+        WM_MOUSEACTIVATE if desktop() || code() == GLUED => LRESULT(MA_NOACTIVATE as isize),
         WM_WINDOWPOSCHANGING if desktop() => {
             // Keep desktop widgets at the bottom of the z-order whenever anything restacks them.
             let pos = lparam.0 as *mut WINDOWPOS;
@@ -410,12 +422,37 @@ struct Host {
     dirty: bool,
     was_foreground: bool,
     appbar: Option<APPBARDATA>,
+    follow: Option<Follow>,
 }
+
+/// A glued widget's window and where it last was.
+struct Follow {
+    glue: Glue,
+    target: Option<HWND>,
+    searched: Option<Instant>,
+    /// The target's frame while it is on screen.
+    frame: Option<crate::shell::rules::ScreenRect>,
+    /// Where the widget was drawn: physical origin and size, and its logical rect.
+    drawn: Option<Drawn>,
+}
+
+/// Physical origin and size of a glued widget's window, and the logical rect drawn into it.
+type Drawn = ((i32, i32), (u32, u32), Rect);
 
 impl Host {
     fn new(entry: Entry, displays: &[Display]) -> Result<Self, String> {
         let display = select_display(displays.to_vec(), &entry.options.monitor)
             .ok_or("Windows reported no active displays.")?;
+        let follow = match &entry.options.glue {
+            Some(g) => Some(Follow {
+                glue: Glue::new("glued widget", g)?,
+                target: None,
+                searched: None,
+                frame: None,
+                drawn: None,
+            }),
+            None => None,
+        };
         // Class registered above; the window is owned by Host and destroyed in Drop.
         let hwnd = unsafe {
             let instance = GetModuleHandleW(None).map_err(|e| e.to_string())?;
@@ -447,6 +484,7 @@ impl Host {
             dirty: true,
             was_foreground: false,
             appbar: None,
+            follow,
         };
         host.surface.set_monitor(host.display.info());
         if host.options.top_appbar {
@@ -467,7 +505,71 @@ impl Host {
         r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom
     }
 
+    /// Screen pixel → logical surface coordinate, `None` outside the surface's window area.
+    fn to_logical(&self, x: i32, y: i32) -> Option<(f32, f32)> {
+        match &self.follow {
+            Some(f) => {
+                let (origin, size, rect) = f.drawn?;
+                window_to_logical(origin, size, rect, self.display.scale, (x, y))
+            }
+            None => self.display.to_logical(x, y),
+        }
+    }
+
+    /// A glued widget keeps up with its window: finds it, moves to its monitor, and redraws
+    /// when it moved, showed or hid.
+    fn follow(&mut self, now: Instant, displays: &[Display]) {
+        let Some(f) = self.follow.as_mut() else {
+            return;
+        };
+        let mut frame = f.target.and_then(shown_frame);
+        if frame.is_none() && f.searched.is_none_or(|t| now - t >= GLUE_SEARCH) {
+            f.searched = Some(now);
+            if let Some(found) = find_window(|w| f.glue.matches(w)) {
+                f.target = Some(found);
+                frame = shown_frame(found);
+            }
+        }
+        let moved = frame != f.frame;
+        f.frame = frame;
+        let target = f.target;
+        self.dirty |= moved;
+        let Some(r) = frame else {
+            return;
+        };
+        if let Some(d) = display_at(displays, (r.left, r.top, r.right, r.bottom))
+            && *d != self.display
+        {
+            self.display = d.clone();
+            self.surface.set_monitor(self.display.info());
+            self.dirty = true;
+        }
+        // Just above the target, so what covers the window covers the widget too.
+        if let Some(target) = target {
+            // SAFETY: read-only z-order query; a stale handle just fails.
+            let above = unsafe { GetWindow(target, GW_HWNDPREV) }.ok();
+            if above != Some(self.hwnd) && self.shown {
+                // SAFETY: restacks our own window without moving or activating it.
+                unsafe {
+                    let _ = SetWindowPos(
+                        self.hwnd,
+                        Some(above.unwrap_or(HWND_TOP)),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                    );
+                }
+            }
+        }
+    }
+
     fn check_display(&mut self, displays: &[Display]) -> Result<(), String> {
+        if self.follow.is_some() {
+            // A glued widget's monitor is its window's (see `follow`).
+            return Ok(());
+        }
         let next = select_display(displays.to_vec(), &self.options.monitor)
             .ok_or("Windows reported no active displays.")?;
         let owner_lost = self.appbar.as_mut().is_some_and(|bar| {
@@ -526,7 +628,8 @@ impl Host {
     fn present(&mut self, now: Instant) -> Result<(), String> {
         self.dirty = false;
         let placement = self.surface.placement(now);
-        if !placement.visible {
+        let target = self.follow.as_ref().map(|f| f.frame);
+        if !placement.visible || target == Some(None) {
             if self.shown {
                 // Hiding our own window.
                 unsafe {
@@ -537,7 +640,11 @@ impl Host {
             return Ok(());
         }
         self.apply_style(&placement);
-        let (x, y, w, h) = self.display.to_physical(placement.rect);
+        let (mut x, mut y, w, h) = self.display.to_physical(placement.rect);
+        if let (Some(f), Some(Some(frame))) = (self.follow.as_mut(), target) {
+            (x, y) = f.glue.place(frame, (w, h), self.display.scale);
+            f.drawn = Some(((x, y), (w, h), placement.rect));
+        }
         if self
             .pixmap
             .as_ref()
@@ -591,7 +698,11 @@ impl Host {
             return;
         }
         self.applied = Some(state);
+        let glued = self.follow.is_some();
         let mut ex = WS_EX_LAYERED | WS_EX_TOOLWINDOW;
+        if glued {
+            ex |= WS_EX_NOACTIVATE;
+        }
         match placement.layer {
             Layer::Desktop => ex |= WS_EX_NOACTIVATE,
             Layer::Normal => {}
@@ -607,7 +718,8 @@ impl Host {
         };
         // Style and z-order changes on our own window; position comes from UpdateLayeredWindow.
         unsafe {
-            SetWindowLongPtrW(self.hwnd, GWLP_USERDATA, layer_code(placement.layer));
+            let code = if glued { GLUED } else { layer_code(placement.layer) };
+            SetWindowLongPtrW(self.hwnd, GWLP_USERDATA, code);
             SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, WINDOW_EX_STYLE(ex.0).0 as isize);
             let _ = SetWindowPos(
                 self.hwnd,

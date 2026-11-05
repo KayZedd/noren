@@ -21,7 +21,8 @@ use std::time::Instant;
 
 use windows::Win32::Foundation::{COLORREF, CloseHandle, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
-    DWMWA_CLOAKED, DWMWINDOWATTRIBUTE, DwmGetWindowAttribute, DwmSetWindowAttribute,
+    DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DWMWINDOWATTRIBUTE, DwmGetWindowAttribute,
+    DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
     CreateSolidBrush, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HBRUSH, HDC, HMONITOR,
@@ -647,6 +648,76 @@ pub(crate) fn exe_name(pid: u32) -> String {
     }
 }
 
+/// What rules match `hwnd` on; `None` for windows rules never apply to: invisible, owned,
+/// tool windows, those of process `own_pid`, the desktop and taskbar. `exe` names a process.
+fn describe(hwnd: HWND, own_pid: u32, exe: impl FnOnce(u32) -> String) -> Option<WindowInfo> {
+    // SAFETY: read-only queries on a window handle; a stale handle just fails.
+    unsafe {
+        if !IsWindowVisible(hwnd).as_bool() || GetAncestor(hwnd, GA_ROOT) != hwnd {
+            return None;
+        }
+        if GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 != 0 {
+            return None;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == own_pid {
+            return None;
+        }
+        let mut buf = [0u16; 256];
+        let n = GetClassNameW(hwnd, &mut buf);
+        let class = wide_to_string(&buf, n);
+        if SKIP_CLASSES.contains(&class.as_str()) {
+            return None;
+        }
+        let mut tbuf = [0u16; 512];
+        let n = GetWindowTextW(hwnd, &mut tbuf);
+        let title = wide_to_string(&tbuf, n);
+        Some(WindowInfo {
+            exe: exe(pid),
+            class,
+            title,
+        })
+    }
+}
+
+/// The front-most window on screen (not minimized, not on another desktop) that `matches`,
+/// leaving out this process's own windows. For widgets glued to a window.
+pub(crate) fn find_window(matches: impl Fn(&WindowInfo) -> bool) -> Option<HWND> {
+    // SAFETY: no preconditions.
+    let own = unsafe { GetCurrentProcessId() };
+    top_level_windows()
+        .into_iter()
+        // SAFETY: read-only query; a stale handle just fails.
+        .filter(|&h| unsafe { !IsIconic(h).as_bool() } && !cloaked(h))
+        .find(|&h| describe(h, own, exe_name).is_some_and(|i| matches(&i)))
+}
+
+/// The visible frame of `hwnd` on screen, without the invisible resize borders; `None` while
+/// it is gone, hidden, minimized or on another virtual desktop.
+pub(crate) fn shown_frame(hwnd: HWND) -> Option<ScreenRect> {
+    // SAFETY: read-only queries; a stale handle just fails.
+    unsafe {
+        if !IsWindow(Some(hwnd)).as_bool() || !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
+            return None;
+        }
+        if cloaked(hwnd) {
+            return None;
+        }
+        let mut r = RECT::default();
+        let framed = DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            (&raw mut r).cast(),
+            size_of::<RECT>() as u32,
+        );
+        if framed.is_err() {
+            GetWindowRect(hwnd, &mut r).ok()?;
+        }
+        (r.right > r.left && r.bottom > r.top).then(|| screen_rect(r))
+    }
+}
+
 fn set_u32(hwnd: HWND, attr: DWMWINDOWATTRIBUTE, value: u32) {
     // SAFETY: a 4-byte value for a 4-byte attribute. Failures (old Windows, a window that
     // refuses) are ignored: the rule simply has no effect there.
@@ -728,38 +799,15 @@ impl Runtime {
             .unwrap_or_default()
     }
 
-    /// `None` for windows rules never apply to: invisible, tool windows, noren's own, the
-    /// desktop and taskbar.
+    /// `None` for windows rules never apply to (see [`describe`]).
     fn info(&mut self, hwnd: HWND) -> Option<WindowInfo> {
-        // SAFETY: read-only queries on a window handle; a stale handle just fails.
-        unsafe {
-            if !IsWindowVisible(hwnd).as_bool() || GetAncestor(hwnd, GA_ROOT) != hwnd {
-                return None;
-            }
-            if GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 != 0 {
-                return None;
-            }
-            let mut pid = 0u32;
-            GetWindowThreadProcessId(hwnd, Some(&mut pid));
-            if pid == self.own_pid {
-                return None;
-            }
-            let mut buf = [0u16; 256];
-            let n = GetClassNameW(hwnd, &mut buf);
-            let class = wide_to_string(&buf, n);
-            if SKIP_CLASSES.contains(&class.as_str()) {
-                return None;
-            }
-            let mut tbuf = [0u16; 512];
-            let n = GetWindowTextW(hwnd, &mut tbuf);
-            let title = wide_to_string(&tbuf, n);
-            let exe = self
-                .exe
+        let cache = &mut self.exe;
+        describe(hwnd, self.own_pid, |pid| {
+            cache
                 .entry(hwnd.0 as isize)
                 .or_insert_with(|| exe_name(pid))
-                .clone();
-            Some(WindowInfo { exe, class, title })
-        }
+                .clone()
+        })
     }
 
     fn refresh_all(&mut self) {

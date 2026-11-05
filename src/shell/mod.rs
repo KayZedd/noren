@@ -31,7 +31,7 @@ use std::io;
 use std::path::PathBuf;
 
 #[cfg(windows)]
-pub(crate) use win::exe_name;
+pub(crate) use win::{exe_name, find_window, shown_frame};
 
 pub use command::{Action, Command, Commands};
 pub use focus::{Focus, Xray};

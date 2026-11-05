@@ -27,6 +27,9 @@ pub struct SurfaceOptions {
     /// Register as the auto-hide AppBar of the top edge, so the shell knows about the panel
     /// (maximized windows leave the hot edge free, the taskbar does not claim it).
     pub top_appbar: bool,
+    /// Ride on the first window this matches instead of sitting on `monitor` (see
+    /// [`crate::glue`]). The surface's own position is ignored; its size is kept.
+    pub glue: Option<crate::glue::GlueConfig>,
 }
 
 impl SurfaceOptions {
@@ -35,6 +38,15 @@ impl SurfaceOptions {
         Self {
             monitor: MonitorSelect::Primary,
             top_appbar: true,
+            glue: None,
+        }
+    }
+
+    /// Options for a widget glued to another app's window.
+    pub fn glued(glue: crate::glue::GlueConfig) -> Self {
+        Self {
+            glue: Some(glue),
+            ..Default::default()
         }
     }
 
@@ -99,6 +111,32 @@ impl Display {
         let h = ((rect.h * self.scale).ceil() as u32).clamp(1, max_h);
         (self.left + x, self.top + y, w, h)
     }
+}
+
+/// Screen pixel → logical coordinate of a surface whose `rect` is drawn into a window at
+/// physical `origin` and `size` instead of at its place on the monitor (a glued widget).
+pub fn window_to_logical(
+    origin: (i32, i32),
+    size: (u32, u32),
+    rect: Rect,
+    scale: f32,
+    point: (i32, i32),
+) -> Option<(f32, f32)> {
+    let (dx, dy) = (
+        i64::from(point.0) - i64::from(origin.0),
+        i64::from(point.1) - i64::from(origin.1),
+    );
+    (dx >= 0 && dy >= 0 && dx < i64::from(size.0) && dy < i64::from(size.1))
+        .then(|| (rect.x + dx as f32 / scale, rect.y + dy as f32 / scale))
+}
+
+/// The display that holds the center of `rect` (left, top, right, bottom).
+pub fn display_at(displays: &[Display], rect: (i32, i32, i32, i32)) -> Option<&Display> {
+    let (cx, cy) = (
+        ((i64::from(rect.0) + i64::from(rect.2)) / 2) as i32,
+        ((i64::from(rect.1) + i64::from(rect.3)) / 2) as i32,
+    );
+    displays.iter().find(|d| d.to_logical(cx, cy).is_some())
 }
 
 /// Sorts primary first, then by position; picks the selected one.
@@ -211,6 +249,41 @@ mod tests {
         // Clamped to the monitor bottom, never zero sized.
         assert_eq!(d.to_physical(Rect::new(0.0, 0.0, 0.0, 5000.0)).2, 1);
         assert_eq!(d.to_physical(Rect::new(0.0, 0.0, 0.0, 5000.0)).3, 1440);
+    }
+
+    #[test]
+    fn glued_windows_map_points_back_to_their_surface() {
+        let rect = Rect::new(0.0, 0.0, 60.0, 20.0);
+        assert_eq!(
+            window_to_logical((-500, 30), (90, 30), rect, 1.5, (-500, 30)),
+            Some((0.0, 0.0))
+        );
+        assert_eq!(
+            window_to_logical((-500, 30), (90, 30), rect, 1.5, (-470, 45)),
+            Some((20.0, 10.0))
+        );
+        assert_eq!(
+            window_to_logical((-500, 30), (90, 30), rect, 1.5, (-410, 45)),
+            None,
+            "right edge is exclusive"
+        );
+        assert_eq!(
+            window_to_logical((-500, 30), (90, 30), rect, 1.5, (-501, 45)),
+            None
+        );
+        let moved = Rect::new(10.0, 5.0, 60.0, 20.0);
+        assert_eq!(
+            window_to_logical((0, 0), (60, 20), moved, 1.0, (3, 4)),
+            Some((13.0, 9.0))
+        );
+    }
+
+    #[test]
+    fn a_window_belongs_to_the_display_under_its_center() {
+        let all = [display("A", false, -2560), display("B", true, 0)];
+        assert_eq!(display_at(&all, (-100, 0, 300, 400)).unwrap().name, "B");
+        assert_eq!(display_at(&all, (-300, 0, 100, 400)).unwrap().name, "A");
+        assert!(display_at(&all, (9000, 0, 9100, 100)).is_none());
     }
 
     #[test]

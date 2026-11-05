@@ -15,6 +15,7 @@ pub mod components;
 pub mod element;
 pub mod exec;
 pub mod geom;
+pub mod glue;
 pub mod history;
 pub mod host;
 pub mod layout;

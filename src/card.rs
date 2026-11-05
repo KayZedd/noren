@@ -50,8 +50,12 @@ pub fn features(p: &Profile) -> Vec<String> {
     if !p.glow.is_empty() {
         out.push(count(p.glow.len(), "edge glow", "edge glows"));
     }
-    if !p.widget.is_empty() {
-        out.push(count(p.widget.len(), "panel widget", "panel widgets"));
+    let glued = p.widget.iter().filter(|w| w.glue.is_some()).count();
+    if p.widget.len() > glued {
+        out.push(count(p.widget.len() - glued, "panel widget", "panel widgets"));
+    }
+    if glued > 0 {
+        out.push(count(glued, "glued widget", "glued widgets"));
     }
     if p.media.is_some() {
         out.push("now playing".into());
@@ -262,7 +266,9 @@ mod tests {
              [[window]]\nexe = \"b.exe\"\nopacity = 0.9\n[media]\n\
              [[layout]]\ndesktop = \"Music\"\nwidgets = [\"media\"]\n\
              [schedule]\nlight = \"sunrise\"\ndark = \"21:00\"\nlatitude = 52.2\nlongitude = 21.0\n\
-             [switcher]\n[[mirror]]\ntitle = \"*log*\"\n",
+             [switcher]\n[[mirror]]\ntitle = \"*log*\"\n\
+             [[widget]]\nname = \"a\"\nrun = [\"a\"]\n\
+             [[widget]]\nname = \"b\"\nrun = [\"b\"]\n[widget.glue]\nexe = \"Code.exe\"\n",
         );
         assert_eq!(
             features(&p),
@@ -270,6 +276,8 @@ mod tests {
                 "Windows accent",
                 "2 window rules",
                 "focus dimming",
+                "1 panel widget",
+                "1 glued widget",
                 "now playing",
                 "1 panel layout",
                 "light sunrise · dark 21:00",

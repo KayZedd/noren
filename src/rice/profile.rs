@@ -48,6 +48,8 @@
 //! name = "weather"
 //! run = ["curl", "-s", "wttr.in/?format=%t"]
 //! interval = 600
+//! [widget.glue]            # or on another app's window instead (see `glue`)
+//! exe = "Code.exe"
 //!
 //! [media]                  # now playing on the panel, colored from the cover (see `media`)
 //! cover_colors = true
@@ -208,19 +210,34 @@ impl Profile {
         profile.xray.as_ref().map(Xray::new).transpose()?;
         profile.commands()?;
         glow::glows(&profile.glow)?;
+        crate::exec::validate(&profile.widget)?;
         layouts::validate(&profile.layout, &profile.panel_widgets())?;
         profile.switcher.as_ref().map(Switcher::new).transpose()?;
         mirror::mirrors(&profile.mirror)?;
         Ok(profile)
     }
 
-    /// The ids of the panel's widgets, in panel order.
+    /// The ids of the panel's widgets, in panel order. Glued widgets are not on the panel.
     fn panel_widgets(&self) -> Vec<&str> {
         let media = self.media.as_ref().map(|_| layouts::MEDIA);
+        let programs = self.widget.iter().filter(|w| w.glue.is_none());
         media
             .into_iter()
-            .chain(self.widget.iter().map(|w| w.name.as_str()))
+            .chain(programs.map(|w| w.name.as_str()))
             .collect()
+    }
+
+    /// Whether `noren panel` shows a panel: `[media]` or a `[[widget]]` without `glue`.
+    pub fn has_panel(&self) -> bool {
+        !self.panel_widgets().is_empty()
+    }
+
+    /// The `[[widget]]`s glued to other apps' windows, started, each with where it goes.
+    pub fn glued(
+        &self,
+    ) -> Result<Vec<(crate::Floating<crate::glue::Glued>, crate::glue::GlueConfig)>, String> {
+        let theme = self.palette().theme(crate::Theme::aizome());
+        crate::exec::glued(&self.widget, &theme)
     }
 
     /// The `[[command]]`s with their `[chords]` and `[corners]` settings, validated.
@@ -239,8 +256,8 @@ impl Profile {
 
     /// The panel `noren panel` shows: `[media]` first, then each `[[widget]]`.
     pub fn panel(&self) -> Result<crate::Panel, String> {
-        if self.widget.is_empty() && self.media.is_none() {
-            return Err("the profile has no [[widget]] or [media]".into());
+        if !self.has_panel() {
+            return Err("the profile has no [media] or [[widget]] on the panel".into());
         }
         let theme = self.palette().theme(crate::Theme::aizome());
         let mut panel = crate::Panel::new(crate::PanelConfig::default(), theme);
@@ -556,6 +573,25 @@ profile = "ff"
             ))
             .is_err()
         );
+    }
+
+    #[test]
+    fn glued_widgets_leave_the_panel_and_bad_glue_fails_the_load() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n\
+                    [[widget]]\nname = \"git\"\nrun = [\"git\"]\n[widget.glue]\nexe = \"Code.exe\"\n";
+        let p = Profile::parse(base).unwrap();
+        assert!(!p.has_panel());
+        assert!(p.panel().err().unwrap().contains("on the panel"));
+        assert_eq!(Profile::parse(&toml::to_string(&p).unwrap()).unwrap(), p);
+        let e = Profile::parse(&format!(
+            "{base}[[layout]]\nexe = [\"a.exe\"]\nwidgets = [\"git\"]\n"
+        ))
+        .unwrap_err();
+        assert!(e.contains("no widget named \"git\""), "{e}");
+        let e = Profile::parse(&base.replace("exe = \"Code.exe\"", "height = 200")).unwrap_err();
+        assert!(e.contains("widget \"git\": glue"), "{e}");
+        let both = format!("{base}[media]\n");
+        assert!(Profile::parse(&both).unwrap().has_panel());
     }
 
     #[test]

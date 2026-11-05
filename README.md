@@ -367,6 +367,24 @@ noren panel my-rice.toml                       # Windows: the panel, Quit in its
 noren panel my-rice.toml --screenshot out.png  # any OS: render once to a PNG
 ```
 
+### Glued to a window
+
+A `glue` table takes a `[[widget]]` off the panel and pins it to another app's window, as a small pill that moves, hides and restacks with it:
+
+```toml
+[[widget]]
+name = "branch"
+run = ["git", "-C", "C:/src/noren", "branch", "--show-current"]
+interval = 5
+[widget.glue]
+exe = "Code.exe"         # globs like [[window]]: exe, class, title; at least one
+anchor = "top_right"     # top_left .. bottom_right of the window, default top_right
+offset = [150, 6]        # from the anchored edges, logical pixels; negative goes outside
+height = 26              # the pill's height, 16 to 96, default 26
+```
+
+The widget follows the first matching window in z-order and stays with it until it closes. It sits just above that window, so whatever covers the window covers the widget too, and it hides while the window is minimized, on another virtual desktop or gone. A click runs `on_click`; glued widgets have no popup. `noren panel` shows them, with a panel or without one.
+
 ### Now playing
 
 `[media]` adds a widget for the current Windows media session: Spotify, a browser tab, foobar2000, anything that shows up in the volume flyout. The panel shows the cover, title and artist; the popup adds the album, a progress bar and previous, play/pause and next.
@@ -445,7 +463,7 @@ noren rollback [--force]                             # undo the newest transacti
 noren log                                            # list transactions
 noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule], [switcher], mirrors until Ctrl+C
 noren schedule <profile.toml>                        # today's dark/light switch times
-noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs, [media] and [[layout]]s
+noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs, [media], [[layout]]s; glued widgets
 noren card <profile.toml> <out.png> [--scale <s>]    # the profile as a PNG to share
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
@@ -467,7 +485,7 @@ Done:
 
 Planned:
 - [x] Any program printing JSON is a widget
-- [ ] Widgets glued to other apps' windows
+- [x] Widgets glued to other apps' windows
 - [x] Live DWM thumbnail mirrors
 - [x] Layouts per foreground app and virtual desktop
 - [ ] Widget placement and text color picked from the wallpaper
@@ -481,7 +499,7 @@ Planned:
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch, the window switcher and window mirrors. Reports are welcome.
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch, the window switcher, window mirrors and glued widgets. Reports are welcome.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
 - The window switcher hears no keys while a window running as administrator has the focus (Windows keeps a normal process's keyboard hook from it), so the system Alt+Tab opens there.

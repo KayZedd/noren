@@ -22,7 +22,8 @@ usage:
                                    corners, [[glow]] and [schedule] until Ctrl+C
   noren card <profile.toml> <out.png>
                                    a PNG of the profile to share [--scale <s>, default 2]
-  noren panel <profile.toml>       a top panel with the profile's [[widget]] programs and [media]
+  noren panel <profile.toml>       a top panel with the profile's [[widget]] programs and [media],
+                                   and the widgets glued to other apps' windows
                                    [--monitor <n>] [--screenshot <out.png>]
   noren schedule <profile.toml>    today's dark/light switch times from [schedule]
   noren commands <profile.toml>    list the profile's [[command]]s
@@ -203,9 +204,8 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         "panel" => {
             let profile = Profile::load(positional(rest).ok_or("missing profile path")?.as_ref())?;
-            let panel = profile.panel()?;
             if let Some(out) = option(rest, "--screenshot") {
-                return screenshot(panel, out.as_ref());
+                return screenshot(profile.panel()?, out.as_ref());
             }
             let monitor = match option(rest, "--monitor") {
                 // 1-based, like `monitor = N` in window rules.
@@ -215,7 +215,17 @@ fn run(args: &[String]) -> Result<(), String> {
                 },
                 None => MonitorSelect::Primary,
             };
-            noren::host::run(vec![Entry::new(panel, SurfaceOptions::panel().on(monitor))])
+            let mut entries = Vec::new();
+            if profile.has_panel() {
+                entries.push(Entry::new(profile.panel()?, SurfaceOptions::panel().on(monitor)));
+            }
+            for (surface, glue) in profile.glued()? {
+                entries.push(Entry::new(surface, SurfaceOptions::glued(glue)));
+            }
+            if entries.is_empty() {
+                return Err("the profile has no [[widget]] or [media]".into());
+            }
+            noren::host::run(entries)
         }
         "card" => {
             let args = positionals(rest);
