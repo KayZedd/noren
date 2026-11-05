@@ -12,6 +12,9 @@ env:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      # RUSTFLAGS replaces .cargo/config.toml's rustflags, so the static CRT is repeated here.
+      RUSTFLAGS: -D warnings -C target-feature=+crt-static
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -21,6 +24,17 @@ jobs:
       - run: cargo clippy --all-targets
       - run: cargo test --all-targets
       - run: cargo build --release --example pulse
+      - run: cargo build --release --features studio --bins
+      # The runner has the VC++ runtime installed, so running the binaries proves nothing.
+      # A clean Windows does not: an import of VCRUNTIME140.dll means noren.exe never starts.
+      - name: No dynamic C runtime
+        shell: pwsh
+        run: |
+          foreach ($exe in "target/release/noren.exe", "target/release/noren-studio.exe") {
+            if (Select-String -Path $exe -Pattern "VCRUNTIME140" -SimpleMatch -Quiet) {
+              Write-Error "$exe imports VCRUNTIME140.dll; build with -C target-feature=+crt-static"
+            }
+          }
 
   linux:
     runs-on: ubuntu-latest

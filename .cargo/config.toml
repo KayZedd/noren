@@ -1,0 +1,7 @@
+# Link the C runtime statically: a clean Windows install has no VCRUNTIME140.dll,
+# and without this noren.exe exits with STATUS_DLL_NOT_FOUND before main.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -536,7 +536,7 @@ noren <command> --state-dir <dir>                    # states somewhere else
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch, the window switcher, window mirrors, glued widgets, desktop widgets and notifications. Reports are welcome.
+- **Partly run on real Windows.** On a clean Windows 11 25H2 VM (build 26200, no GPU driver): `palette`, `diff`, `apply`, `rollback` (registry, Windows Terminal and VS Code bytes restored, comments kept), `log`, `windows`, the panel (auto-hide top bar, media, exec widgets, error marks), glued and desktop widgets, `noren notify` cards, and the library tests (261 pass). Not yet run live: `noren run` (rules, focus dim, x-ray, chords, corners, glows, switcher, mirrors), the schedule switch, layouts, `card`, the studio tray and acrylic backdrop. Windows 10 is untested. Reports are welcome.
 - Desktop widgets see a slideshow's next picture at the next check, up to 30 s later. A wallpaper that fails to decode leaves the widgets on its monitor where they were.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
