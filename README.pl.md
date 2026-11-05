@@ -404,6 +404,26 @@ text = "auto"            # "auto" czytelny na tapecie, "palette" zostawia kolor 
 
 noren dekoduje tapetę w 256 pikselach i ocenia każdy róg, potem każdą krawędź, po tym, jak bardzo zmienia się jasność i jak ostre są krawędzie; wygrywa najspokojniejsze miejsce, przy remisie prawy górny róg. Przy `text = "auto"` zwykły tekst bierze ten z kolorów tekstu i tła palety, który ma większy kontrast (WCAG) z tapetą pod widżetem; kolory ok, warn i fail zostają. Oba wybory zapadają na nowo, gdy zmieni się plik tapety albo monitor (sprawdzane co 30 s), nie gdy zmieni się tekst, więc widżet nie wędruje. Widżet ma `glue` albo `desktop`, nie oba.
 
+### Powiadomienia
+
+`[notifications]` daje skryptom własne karty w kolorach palety, ułożone w rogu przez `noren panel`:
+
+```toml
+[notifications]
+anchor = "bottom_right"   # róg albo krawędź monitora, domyślnie bottom_right
+offset = [24, 24]         # od zakotwiczonych krawędzi, piksele logiczne, domyślnie 24
+monitor = 1               # numeracja jak w regułach okien, domyślnie główny
+width = 360               # szerokość karty, 200 do 800, domyślnie 360
+timeout = 6               # sekundy na ekranie, 0 trzyma kartę do kliknięcia
+max = 4                   # karty naraz, 1 do 10; reszta czeka na swoją kolej
+```
+
+```sh
+cargo build && noren notify "Build" "gotowe" --state ok || noren notify "Build" "błąd" --state fail --timeout 0
+```
+
+`--state` barwi krawędź karty jak `noren state` (ok, warn, fail, busy); bez niego robi to akcent. Kliknięcie zamyka kartę. Każde `noren notify` zostawia mały plik w `%LOCALAPPDATA%\noren\notifications` (`--queue <katalog>` dla innego); panel czyta kolejkę co 250 ms i kasuje to, co pokazał, a notatki starsze niż godzina znikają niepokazane. Własne toasty Windowsa zostają bez zmian: aplikacja bez tożsamości pakietu nie może ich czytać ani przestylować.
+
 ### Teraz odtwarzane
 
 `[media]` dodaje widżet bieżącej sesji multimediów Windows: Spotify, karta przeglądarki, foobar2000, wszystko, co widać w wysuwanym panelu głośności. Na panelu jest okładka, tytuł i wykonawca; popup dokłada album, pasek postępu oraz poprzedni, odtwarzaj/pauza i następny.
@@ -482,10 +502,11 @@ noren rollback [--force]                             # cofnij najnowszą transak
 noren log                                            # lista transakcji
 noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule], [switcher], lustra do Ctrl+C
 noren schedule <profile.toml>                        # dzisiejsze godziny przełączenia ciemny/jasny
-noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]], [media], [[layout]]; widżety przyklejone i na pulpicie
+noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]], [media], [[layout]]; widżety przyklejone i na pulpicie; [notifications]
 noren card <profile.toml> <out.png> [--scale <s>]    # profil jako PNG do udostępnienia
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
+noren notify <tytuł> [<treść>] [--state <s>]         # karta w [notifications] panelu
 noren commands <profile.toml> [<nazwa>]              # lista [[command]] albo uruchom jedną
 noren <komenda> --journal <katalog>                  # dziennik w innym miejscu
 noren <komenda> --state-dir <katalog>                # stany w innym miejscu
@@ -513,12 +534,12 @@ W planach:
 - [x] Akordy leader-key, paleta komend, gorące rogi
 - [x] Zamiennik Alt+Tab z żywymi miniaturami
 - [x] Widżet multimediów z motywem z okładki
-- [ ] Przestylowane powiadomienia
+- [x] Przestylowane powiadomienia (własne karty noren; toasty Windowsa zostają)
 - [x] Karta rice'a do udostępnienia jako PNG
 
 ## Ograniczenia
 
-- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi, przełączania według harmonogramu, przełącznika okien, luster okien, przyklejonych widżetów i widżetów na pulpicie. Zgłoszenia mile widziane.
+- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi, przełączania według harmonogramu, przełącznika okien, luster okien, przyklejonych widżetów, widżetów na pulpicie i powiadomień. Zgłoszenia mile widziane.
 - Widżety na pulpicie czytają tapetę tak, jak pokazuje ją dopasowanie "Wypełnienie" Windowsa, i biorą ten sam obraz na każdy monitor; inne dopasowania, pokaz slajdów między sprawdzeniami i osobne tapety na monitorach mogą postawić je w bardziej zajętym miejscu.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.

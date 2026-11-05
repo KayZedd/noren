@@ -404,6 +404,26 @@ text = "auto"            # "auto" reads on the wallpaper, "palette" keeps the pa
 
 noren decodes the wallpaper at 256 pixels and scores each corner, then each edge, by how much its brightness varies and how sharp its edges are; the calmest wins, the top right on a tie. With `text = "auto"` plain text takes whichever of the palette's text and background colors has more contrast (WCAG) with the wallpaper under the widget; ok, warn and fail colors stay. Both are picked again when the wallpaper file or the monitor changes (checked every 30 s), not when the text does, so the widget does not wander. A widget can have `glue` or `desktop`, not both.
 
+### Notifications
+
+`[notifications]` gives scripts their own cards in the palette's colors, stacked in a corner by `noren panel`:
+
+```toml
+[notifications]
+anchor = "bottom_right"   # corner or edge of the monitor, default bottom_right
+offset = [24, 24]         # from the anchored edges, logical pixels, default 24
+monitor = 1               # same numbering as window rules, default the primary
+width = 360               # card width, 200 to 800, default 360
+timeout = 6               # seconds on screen, 0 keeps a card until it is clicked
+max = 4                   # cards at once, 1 to 10; the rest wait their turn
+```
+
+```sh
+cargo build && noren notify "Build" "finished" --state ok || noren notify "Build" "failed" --state fail --timeout 0
+```
+
+`--state` colors the card's edge like `noren state` (ok, warn, fail, busy); without it the accent does. A click dismisses a card. Each `noren notify` drops one small file in `%LOCALAPPDATA%\noren\notifications` (`--queue <dir>` for another); the panel reads the queue every 250 ms and deletes what it shows, and notes older than an hour are dropped unseen. Windows' own toasts stay as they are: an app without package identity cannot read or restyle them.
+
 ### Now playing
 
 `[media]` adds a widget for the current Windows media session: Spotify, a browser tab, foobar2000, anything that shows up in the volume flyout. The panel shows the cover, title and artist; the popup adds the album, a progress bar and previous, play/pause and next.
@@ -482,10 +502,11 @@ noren rollback [--force]                             # undo the newest transacti
 noren log                                            # list transactions
 noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule], [switcher], mirrors until Ctrl+C
 noren schedule <profile.toml>                        # today's dark/light switch times
-noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs, [media], [[layout]]s; glued and desktop widgets
+noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs, [media], [[layout]]s; glued and desktop widgets; [notifications]
 noren card <profile.toml> <out.png> [--scale <s>]    # the profile as a PNG to share
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
+noren notify <title> [<body>] [--state <s>]          # a card on the panel's [notifications]
 noren commands <profile.toml> [<name>]               # list [[command]]s, or run one
 noren <command> --journal <dir>                      # journal somewhere else
 noren <command> --state-dir <dir>                    # states somewhere else
@@ -513,12 +534,12 @@ Planned:
 - [x] Leader-key chords, command palette, hot corners
 - [x] Alt+Tab replacement with live thumbnails
 - [x] Media widget themed from the cover art
-- [ ] Restyled notifications
+- [x] Restyled notifications (noren's own cards; Windows toasts stay)
 - [x] Shareable rice card PNG
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch, the window switcher, window mirrors, glued widgets and desktop widgets. Reports are welcome.
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch, the window switcher, window mirrors, glued widgets, desktop widgets and notifications. Reports are welcome.
 - Desktop widgets read the wallpaper as Windows' "Fill" fit shows it and use the same image on every monitor; other fits, slideshows between checks and per-monitor wallpapers can put them on a busier spot.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.

@@ -22,6 +22,7 @@ pub mod host;
 pub mod layout;
 pub mod layouts;
 pub mod media;
+pub mod notify;
 pub mod palette;
 pub mod panel;
 pub mod render;

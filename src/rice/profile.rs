@@ -139,6 +139,8 @@ pub struct Profile {
     /// Live copies of other windows, held by `noren run` (see [`crate::shell::mirror`]).
     #[serde(default)]
     pub mirror: Vec<MirrorConfig>,
+    /// Cards from `noren notify`, shown by `noren panel` (see [`crate::notify`]).
+    pub notifications: Option<crate::notify::NotifyConfig>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -215,6 +217,11 @@ impl Profile {
         layouts::validate(&profile.layout, &profile.panel_widgets())?;
         profile.switcher.as_ref().map(Switcher::new).transpose()?;
         mirror::mirrors(&profile.mirror)?;
+        profile
+            .notifications
+            .as_ref()
+            .map(crate::notify::NotifyConfig::validate)
+            .transpose()?;
         Ok(profile)
     }
 
@@ -246,6 +253,13 @@ impl Profile {
     pub fn desktop(&self) -> Result<Vec<(crate::desk::OnWallpaper, Option<u32>)>, String> {
         let theme = self.palette().theme(crate::Theme::aizome());
         crate::exec::desktop(&self.widget, &theme, crate::wallpaper::watch)
+    }
+
+    /// The `[notifications]` stack reading the queue in `dir`, when the profile has one.
+    pub fn toasts(&self, dir: Option<std::path::PathBuf>) -> Option<crate::Floating<crate::notify::Toasts>> {
+        let config = self.notifications.clone()?;
+        let theme = self.palette().theme(crate::Theme::aizome());
+        Some(crate::notify::Toasts::new(config, dir).surface(theme))
     }
 
     /// The `[[command]]`s with their `[chords]` and `[corners]` settings, validated.
@@ -600,6 +614,17 @@ profile = "ff"
         assert!(e.contains("widget \"git\": glue"), "{e}");
         let both = format!("{base}[media]\n");
         assert!(Profile::parse(&both).unwrap().has_panel());
+    }
+
+    #[test]
+    fn notifications_parse_round_trip_and_bad_ones_fail_the_load() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n";
+        assert!(Profile::parse(base).unwrap().toasts(None).is_none());
+        let p = Profile::parse(&format!("{base}[notifications]\nanchor = \"top_right\"\n")).unwrap();
+        assert!(p.toasts(None).is_some());
+        assert_eq!(Profile::parse(&toml::to_string(&p).unwrap()).unwrap(), p);
+        let e = Profile::parse(&format!("{base}[notifications]\nmax = 50\n")).unwrap_err();
+        assert!(e.contains("notifications: max 50"), "{e}");
     }
 
     #[test]

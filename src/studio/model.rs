@@ -57,6 +57,9 @@ border = "accent.7"
 # [widget.desktop]       # or sit on the wallpaper, placed and colored to read on it
 # text = "auto"
 
+# [notifications]        # cards from `noren notify "title" "body" --state ok` on `noren panel`
+# anchor = "bottom_right"
+
 # [media]                # now playing on `noren panel`, colored from the album cover
 # cover_colors = true
 

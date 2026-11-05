@@ -23,7 +23,8 @@ usage:
   noren card <profile.toml> <out.png>
                                    a PNG of the profile to share [--scale <s>, default 2]
   noren panel <profile.toml>       a top panel with the profile's [[widget]] programs and [media],
-                                   the widgets glued to other apps' windows and on the desktop
+                                   the widgets glued to other apps' windows and on the desktop,
+                                   and [notifications]
                                    [--monitor <n>] [--screenshot <out.png>]
   noren schedule <profile.toml>    today's dark/light switch times from [schedule]
   noren commands <profile.toml>    list the profile's [[command]]s
@@ -33,6 +34,8 @@ usage:
   noren state                      list states
   noren state <name> <ok|fail|warn|busy|clear>
                                    set a state read by border = state:<name>
+  noren notify <title> [<body>]    queue a notification for the panel's [notifications]
+                                   [--state ok|fail|warn|busy] [--timeout <s>, 0 stays]
   noren report [<profile.toml>]    print a compatibility report (no names or paths)
                                    [--open: open it as a GitHub issue to review and submit]
   noren update [--check]           install the newest signed release, or only check
@@ -40,6 +43,7 @@ usage:
 options:
   --journal <dir>                  journal location (default: %LOCALAPPDATA%\\noren\\journal)
   --state-dir <dir>                state location (default: %LOCALAPPDATA%\\noren\\state)
+  --queue <dir>                    notification queue (default: %LOCALAPPDATA%\\noren\\notifications)
 ";
 
 fn main() -> ExitCode {
@@ -73,7 +77,15 @@ fn positionals(args: &[String]) -> Vec<&str> {
             skip = false;
         } else if matches!(
             a.as_str(),
-            "--journal" | "--export" | "--state-dir" | "--screenshot" | "--monitor" | "--scale"
+            "--journal"
+                | "--export"
+                | "--state-dir"
+                | "--screenshot"
+                | "--monitor"
+                | "--scale"
+                | "--state"
+                | "--timeout"
+                | "--queue"
         ) {
             skip = true;
         } else if !a.starts_with("--") {
@@ -91,6 +103,14 @@ fn state_dir(args: &[String]) -> Result<PathBuf, String> {
     match option(args, "--state-dir") {
         Some(d) => Ok(PathBuf::from(d)),
         None => state::default_dir().ok_or_else(|| "cannot find a state directory, pass --state-dir".into()),
+    }
+}
+
+fn queue_dir(args: &[String]) -> Result<PathBuf, String> {
+    match option(args, "--queue") {
+        Some(d) => Ok(PathBuf::from(d)),
+        None => noren::notify::default_dir()
+            .ok_or_else(|| "cannot find a notification queue, pass --queue".into()),
     }
 }
 
@@ -222,12 +242,20 @@ fn run(args: &[String]) -> Result<(), String> {
             for (surface, glue) in profile.glued()? {
                 entries.push(Entry::new(surface, SurfaceOptions::glued(glue)));
             }
+            if let Some(cfg) = &profile.notifications {
+                let on = cfg
+                    .monitor
+                    .map_or(MonitorSelect::Primary, |m| MonitorSelect::Index(m as usize - 1));
+                if let Some(toasts) = profile.toasts(Some(queue_dir(rest)?)) {
+                    entries.push(Entry::new(toasts, SurfaceOptions::default().on(on)));
+                }
+            }
             for (surface, monitor) in profile.desktop()? {
                 let on = monitor.map_or(MonitorSelect::Primary, |m| MonitorSelect::Index(m as usize - 1));
                 entries.push(Entry::new(surface, SurfaceOptions::default().on(on)));
             }
             if entries.is_empty() {
-                return Err("the profile has no [[widget]] or [media]".into());
+                return Err("the profile has no [[widget]], [media] or [notifications]".into());
             }
             noren::host::run(entries)
         }
@@ -326,6 +354,28 @@ fn run(args: &[String]) -> Result<(), String> {
                 }
                 _ => Err("usage: noren state [<name> <ok|fail|warn|busy|clear>]".into()),
             }
+        }
+        "notify" => {
+            let (title, body) = match positionals(rest)[..] {
+                [title] => (title, ""),
+                [title, body] => (title, body),
+                _ => {
+                    return Err(
+                        "usage: noren notify <title> [<body>] [--state ok|fail|warn|busy] [--timeout <s>]"
+                            .into(),
+                    );
+                }
+            };
+            let timeout = option(rest, "--timeout")
+                .map(|t| t.parse::<f32>().map_err(|_| format!("bad timeout {t:?}")))
+                .transpose()?;
+            let note = noren::notify::Note {
+                title: title.into(),
+                body: body.into(),
+                state: option(rest, "--state").map(Into::into),
+                timeout,
+            };
+            noren::notify::post(&queue_dir(rest)?, &note).map(|_| ())
         }
         "report" => {
             let profile = match positional(rest) {

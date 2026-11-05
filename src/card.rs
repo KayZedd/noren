@@ -77,6 +77,9 @@ pub fn features(p: &Profile) -> Vec<String> {
     if !p.mirror.is_empty() {
         out.push(count(p.mirror.len(), "window mirror", "window mirrors"));
     }
+    if p.notifications.is_some() {
+        out.push("styled notifications".into());
+    }
     out
 }
 
@@ -271,7 +274,7 @@ mod tests {
              [[window]]\nexe = \"b.exe\"\nopacity = 0.9\n[media]\n\
              [[layout]]\ndesktop = \"Music\"\nwidgets = [\"media\"]\n\
              [schedule]\nlight = \"sunrise\"\ndark = \"21:00\"\nlatitude = 52.2\nlongitude = 21.0\n\
-             [switcher]\n[[mirror]]\ntitle = \"*log*\"\n\
+             [switcher]\n[[mirror]]\ntitle = \"*log*\"\n[notifications]\n\
              [[widget]]\nname = \"a\"\nrun = [\"a\"]\n\
              [[widget]]\nname = \"b\"\nrun = [\"b\"]\n[widget.glue]\nexe = \"Code.exe\"\n\
              [[widget]]\nname = \"c\"\nrun = [\"c\"]\n[widget.desktop]\n",
@@ -290,6 +293,7 @@ mod tests {
                 "light sunrise · dark 21:00",
                 "switcher Alt+Tab",
                 "1 window mirror",
+                "styled notifications",
             ]
         );
     }
