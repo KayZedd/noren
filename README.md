@@ -250,6 +250,22 @@ thumbnails = true              # live DWM thumbnails; false shows title cards on
 
 While `noren run` or the studio's Live card holds the profile, the key opens a grid of the windows the system Alt+Tab would list, most recent first, each with a live thumbnail, its title and its program. Tap the key again (or the arrows) to move, release the modifier or press Enter to switch, Esc to cancel, or click a card. The grid sits on the monitor of the window in front, takes the palette's colors and never takes the focus, so the window you leave keeps it until you switch.
 
+### Window mirrors
+
+```toml
+[[mirror]]
+exe = "WindowsTerminal.exe"    # globs like [[window]]: exe, class, title
+title = "*cargo*"
+anchor = "bottom_right"        # top_left, top, top_right, left, center, right, bottom_left, bottom, bottom_right
+offset = [24, 24]
+width = 320                    # the height follows the window's shape, up to max_height (240)
+opacity = 0.9                  # fades into the palette background
+client_only = true             # leave out the title bar and frame
+hide_when_focused = true       # step aside while the window itself is in front
+```
+
+A mirror is a small always-on-top copy of another window that DWM keeps live: a build log, a chat or a video stays in sight while other windows cover it. It follows the first matching window, front to back, and a click brings that window forward. It hides while nothing matches, while its window is minimized (DWM has no live picture of a minimized window) or in front, and while a fullscreen app has its monitor. `monitor = N` picks the monitor, numbered as in window rules.
+
 ## FAQ
 
 **Will it break my settings?** Before writing, noren journals every value it is about to replace in `%LOCALAPPDATA%\noren\journal`. If any write fails, the ones already done are reverted. `noren rollback` restores the previous bytes exactly. In an end-to-end run, a VS Code `settings.json` came back byte-identical after apply and rollback.
@@ -427,7 +443,7 @@ noren diff <profile.toml>                            # what apply would change
 noren apply <profile.toml>                           # apply as one transaction
 noren rollback [--force]                             # undo the newest transaction
 noren log                                            # list transactions
-noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule], [switcher] until Ctrl+C
+noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule], [switcher], mirrors until Ctrl+C
 noren schedule <profile.toml>                        # today's dark/light switch times
 noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs, [media] and [[layout]]s
 noren card <profile.toml> <out.png> [--scale <s>]    # the profile as a PNG to share
@@ -452,7 +468,7 @@ Done:
 Planned:
 - [x] Any program printing JSON is a widget
 - [ ] Widgets glued to other apps' windows
-- [ ] Live DWM thumbnail mirrors
+- [x] Live DWM thumbnail mirrors
 - [x] Layouts per foreground app and virtual desktop
 - [ ] Widget placement and text color picked from the wallpaper
 - [x] Theme by time of day and sunrise
@@ -465,10 +481,11 @@ Planned:
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch and the window switcher. Reports are welcome.
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch, the window switcher and window mirrors. Reports are welcome.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
 - The window switcher hears no keys while a window running as administrator has the focus (Windows keeps a normal process's keyboard hook from it), so the system Alt+Tab opens there.
+- Apps that protect their content from capture (some DRM video) show black in mirrors and switcher thumbnails.
 - Edge glows are topmost windows, but the taskbar can still draw over a glow on its edge.
 - `noren run` must keep running for window rules to hold. If it is killed without Ctrl+C, the windows keep their style until they close.
 - Firefox ignores `userChrome.css` until it restarts. VS Code and Windows Terminal reload on their own.

@@ -250,6 +250,22 @@ thumbnails = true              # żywe miniatury DWM; false pokazuje same karty 
 
 Gdy `noren run` albo karta Live w studiu trzyma profil, klawisz otwiera siatkę okien, które pokazałby systemowy Alt+Tab, od ostatnio używanego, każde z żywą miniaturą, tytułem i programem. Kolejne naciśnięcie klawisza (albo strzałki) przesuwa wybór, puszczenie modyfikatora albo Enter przełącza, Esc anuluje, można też kliknąć kartę. Siatka pojawia się na monitorze okna z przodu, bierze kolory z palety i nigdy nie zabiera fokusu, więc opuszczane okno trzyma go do chwili przełączenia.
 
+### Lustra okien
+
+```toml
+[[mirror]]
+exe = "WindowsTerminal.exe"    # globy jak w [[window]]: exe, class, title
+title = "*cargo*"
+anchor = "bottom_right"        # top_left, top, top_right, left, center, right, bottom_left, bottom, bottom_right
+offset = [24, 24]
+width = 320                    # wysokość idzie za kształtem okna, do max_height (240)
+opacity = 0.9                  # przechodzi w tło palety
+client_only = true             # bez paska tytułu i ramki
+hide_when_focused = true       # schodzi z drogi, gdy samo okno jest z przodu
+```
+
+Lustro to mała kopia innego okna, zawsze na wierzchu, którą DWM trzyma na żywo: log budowania, czat albo film zostaje w zasięgu wzroku, gdy inne okna go zasłaniają. Idzie za pierwszym pasującym oknem, od przodu, a kliknięcie wyciąga to okno na przód. Chowa się, gdy nic nie pasuje, gdy jego okno jest zminimalizowane (DWM nie ma żywego obrazu zminimalizowanego okna) albo z przodu, i gdy aplikacja pełnoekranowa zajmuje jego monitor. `monitor = N` wybiera monitor, numerowany jak w regułach okien.
+
 ## FAQ
 
 **Zepsuje mi ustawienia?** Przed zapisem noren zapisuje w `%LOCALAPPDATA%\noren\journal` każdą wartość, którą zaraz nadpisze. Jeśli któryś zapis się nie uda, wykonane już zapisy są cofane. `noren rollback` przywraca poprzednie bajty co do jednego. W teście end-to-end `settings.json` VS Code wrócił identyczny bajt w bajt po apply i rollback.
@@ -427,7 +443,7 @@ noren diff <profile.toml>                            # co zmieni apply
 noren apply <profile.toml>                           # zastosuj jako jedną transakcję
 noren rollback [--force]                             # cofnij najnowszą transakcję
 noren log                                            # lista transakcji
-noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule], [switcher] do Ctrl+C
+noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule], [switcher], lustra do Ctrl+C
 noren schedule <profile.toml>                        # dzisiejsze godziny przełączenia ciemny/jasny
 noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]], [media] i [[layout]]
 noren card <profile.toml> <out.png> [--scale <s>]    # profil jako PNG do udostępnienia
@@ -452,7 +468,7 @@ Zrobione:
 W planach:
 - [x] Każdy program wypisujący JSON jest widżetem
 - [ ] Widżety przyklejone do okien innych aplikacji
-- [ ] Żywe lustra miniatur DWM
+- [x] Żywe lustra miniatur DWM
 - [x] Układy per aplikacja na pierwszym planie i per pulpit wirtualny
 - [ ] Położenie widżetów i kolor tekstu dobierane z tapety
 - [x] Motyw zależny od pory dnia i wschodu słońca
@@ -465,10 +481,11 @@ W planach:
 
 ## Ograniczenia
 
-- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi, przełączania według harmonogramu i przełącznika okien. Zgłoszenia mile widziane.
+- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi, przełączania według harmonogramu, przełącznika okien i luster okien. Zgłoszenia mile widziane.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
 - Przełącznik okien nie słyszy klawiszy, gdy fokus ma okno uruchomione jako administrator (Windows nie daje tam hooka klawiatury zwykłemu procesowi), więc tam otwiera się systemowy Alt+Tab.
+- Aplikacje chroniące obraz przed przechwyceniem (część wideo z DRM) są czarne w lustrach i miniaturach przełącznika.
 - Poświaty to okna topmost, ale pasek zadań i tak może rysować się nad poświatą na swojej krawędzi.
 - `noren run` musi działać, żeby reguły okien się trzymały. Zabity bez Ctrl+C zostawia okna w swoim stylu, dopóki się nie zamkną.
 - Firefox ignoruje `userChrome.css` do restartu. VS Code i Windows Terminal przeładowują się same.

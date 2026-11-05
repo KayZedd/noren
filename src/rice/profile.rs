@@ -64,6 +64,9 @@
 //!
 //! [switcher]               # Alt+Tab with live thumbnails (see `shell::switcher`)
 //! key = "Alt+Tab"
+//!
+//! [[mirror]]               # a live copy of another window (see `shell::mirror`)
+//! exe = "Spotify.exe"
 //! ```
 //!
 //! Every target accepts `path = "..."` to point at a non-default config file.
@@ -83,6 +86,7 @@ use crate::palette::{Palette, PaletteSpec, export};
 use crate::shell::command::{ChordsConfig, CommandConfig, Commands, CornersConfig};
 use crate::shell::focus::{Focus, FocusConfig, Xray, XrayConfig};
 use crate::shell::glow::{self, GlowConfig};
+use crate::shell::mirror::{self, MirrorConfig};
 use crate::shell::schedule::ScheduleConfig;
 use crate::shell::switcher::{Switcher, SwitcherConfig};
 use crate::shell::{Rules, WindowRule};
@@ -129,6 +133,9 @@ pub struct Profile {
     pub schedule: Option<ScheduleConfig>,
     /// The Alt+Tab replacement with live thumbnails, held by `noren run`.
     pub switcher: Option<SwitcherConfig>,
+    /// Live copies of other windows, held by `noren run` (see [`crate::shell::mirror`]).
+    #[serde(default)]
+    pub mirror: Vec<MirrorConfig>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -203,6 +210,7 @@ impl Profile {
         glow::glows(&profile.glow)?;
         layouts::validate(&profile.layout, &profile.panel_widgets())?;
         profile.switcher.as_ref().map(Switcher::new).transpose()?;
+        mirror::mirrors(&profile.mirror)?;
         Ok(profile)
     }
 
@@ -469,6 +477,16 @@ profile = "ff"
         );
         let bad = Profile::parse(&format!("{base}[[window]]\nopacity = 0.0\n")).unwrap_err();
         assert!(bad.contains("opacity"), "{bad}");
+    }
+
+    #[test]
+    fn mirrors_parse_and_are_validated_with_the_profile() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n";
+        let p = Profile::parse(&format!("{base}[[mirror]]\nexe = \"Spotify.exe\"\nwidth = 400\n")).unwrap();
+        assert_eq!(p.mirror.len(), 1);
+        assert_eq!(p.mirror[0].width, 400.0);
+        let bad = Profile::parse(&format!("{base}[[mirror]]\nwidth = 400\n")).unwrap_err();
+        assert!(bad.contains("mirror 1"), "{bad}");
     }
 
     #[test]

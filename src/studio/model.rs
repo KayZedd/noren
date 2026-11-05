@@ -67,6 +67,10 @@ border = "accent.7"
 
 # [switcher]             # Alt+Tab with live window thumbnails while Live holds the profile
 # key = "Alt+Tab"
+
+# [[mirror]]             # a live copy of a window, kept in the corner while others cover it
+# exe = "Spotify.exe"
+# anchor = "bottom_right"
 "##;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

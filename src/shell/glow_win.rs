@@ -220,7 +220,7 @@ fn create() -> io::Result<HWND> {
 
 /// The monitor's scale when this process is DPI aware; 1 when it is not (Windows then scales
 /// coordinates for us).
-fn scale(monitor: HMONITOR) -> f32 {
+pub(super) fn scale(monitor: HMONITOR) -> f32 {
     let (mut x, mut y) = (96u32, 96u32);
     // SAFETY: OS-provided handle and plain out pointers.
     let _ = unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y) };

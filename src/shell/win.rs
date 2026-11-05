@@ -20,7 +20,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
 use windows::Win32::Foundation::{COLORREF, CloseHandle, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Dwm::{DWMWINDOWATTRIBUTE, DwmGetWindowAttribute, DwmSetWindowAttribute};
+use windows::Win32::Graphics::Dwm::{
+    DWMWA_CLOAKED, DWMWINDOWATTRIBUTE, DwmGetWindowAttribute, DwmSetWindowAttribute,
+};
 use windows::Win32::Graphics::Gdi::{
     CreateSolidBrush, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HBRUSH, HDC, HMONITOR,
     MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, MonitorFromWindow,
@@ -37,15 +39,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EVENT_OBJECT_DESTROY,
     EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW, EVENT_SYSTEM_FOREGROUND,
     EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EnumWindows, GA_ROOT, GWL_EXSTYLE, GetAncestor,
-    GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindowLongPtrW,
-    GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HC_ACTION, IsIconic, IsWindow, IsWindowVisible,
-    IsZoomed, KBDLLHOOKSTRUCT, KillTimer, LWA_ALPHA, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW,
-    RegisterClassW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE,
-    SW_MAXIMIZE, SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetLayeredWindowAttributes,
-    SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx,
-    WH_KEYBOARD_LL, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_KEYDOWN, WM_LBUTTONUP,
-    WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    GetClassNameW, GetClientRect, GetCursorPos, GetForegroundWindow, GetMessageW, GetSystemMetrics,
+    GetWindowLongPtrW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HC_ACTION, IsIconic,
+    IsWindow, IsWindowVisible, IsZoomed, KBDLLHOOKSTRUCT, KillTimer, LWA_ALPHA, MSG, PM_NOREMOVE,
+    PeekMessageW, PostThreadMessageW, RegisterClassW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SW_MAXIMIZE, SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER,
+    SWP_SHOWWINDOW, SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW,
+    ShowWindow, UnhookWindowsHookEx, WH_KEYBOARD_LL, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP,
+    WM_KEYDOWN, WM_LBUTTONUP, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{BOOL, PWSTR, w};
 
@@ -53,14 +55,17 @@ use super::Live;
 use super::command::{self, Action, Chords, Commands, HotCorners};
 use super::focus::{Focus, Xray, fullscreen};
 use super::glow::Glows;
-use super::glow_win::{Layers, Screen};
+use super::glow_win::{Layers, Screen, scale};
 use super::keys::Hold;
+use super::mirror::{self, Mirror};
+use super::mirror_win::{Mirrors, Target};
 use super::rules::{Op, Rules, ScreenRect, Style, WindowInfo, monitor_order, ops, relocate};
 use super::schedule::{Local, Tracker};
 use super::state::{self, State};
 use super::switcher::{Act, Switch};
 use super::switcher_win::{Overlay, activate};
 use crate::Theme;
+use crate::palette::export::colorref;
 use crate::palette::{Mode, Palette};
 use crate::rice::{self, Journal, Profile, SystemStore};
 
@@ -148,6 +153,8 @@ struct Runtime {
     schedule: Option<(Tracker, Profile)>,
     /// The window switcher popup (`[switcher]`).
     switcher: Option<Overlay>,
+    /// The `[[mirror]]`s and their popups.
+    mirrors: Option<(Vec<Mirror>, Mirrors)>,
 }
 
 fn win_event_hook(event: u32) -> HWINEVENTHOOK {
@@ -189,6 +196,7 @@ pub fn hold(
         glows,
         schedule,
         switcher,
+        mirrors,
         profile,
         source,
     } = live;
@@ -221,10 +229,26 @@ pub fn hold(
                 .into_iter()
                 .map(win_event_hook),
             );
-        } else if !glows.is_empty() {
-            // Glows step aside for fullscreen apps, which arrive through the foreground.
-            hooks.push(win_event_hook(EVENT_SYSTEM_FOREGROUND));
+        } else {
+            // Glows and mirrors step aside for fullscreen apps, which arrive through the
+            // foreground; mirrors also follow their windows being minimized and restored.
+            if !glows.is_empty() || !mirrors.is_empty() {
+                hooks.push(win_event_hook(EVENT_SYSTEM_FOREGROUND));
+            }
+            if !mirrors.is_empty() {
+                hooks.extend(
+                    [EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND]
+                        .into_iter()
+                        .map(win_event_hook),
+                );
+            }
         }
+        let mirrors = if mirrors.is_empty() {
+            None
+        } else {
+            let popups = Mirrors::new(mirrors.len(), colorref(palette.background()))?;
+            Some((mirrors, popups))
+        };
         let layers = if glows.is_empty() {
             None
         } else {
@@ -269,6 +293,7 @@ pub fn hold(
             frame: 0,
             schedule: schedule.map(|t| (t, profile)),
             switcher: overlay_switcher,
+            mirrors,
         };
         if watch_states {
             rt.states = rt.read_states();
@@ -280,6 +305,7 @@ pub fn hold(
             || chording
             || rt.schedule.is_some()
             || rt.switcher.is_some()
+            || rt.mirrors.is_some()
         {
             SetTimer(None, 0, STATE_POLL_MS, None)
         } else {
@@ -293,6 +319,7 @@ pub fn hold(
         rt.refresh_all();
         rt.update_focus();
         rt.draw_glows();
+        rt.update_mirrors();
         eprintln!(
             "noren: {} windows styled{}{}, Ctrl+C restores them and exits",
             rt.applied.len(),
@@ -314,6 +341,9 @@ pub fn hold(
         }
         if let Some(s) = &switcher {
             eprintln!("noren: {} switches windows", s.combo);
+        }
+        if let Some((list, _)) = &rt.mirrors {
+            eprintln!("noren: {} mirror(s) follow their windows", list.len());
         }
 
         let mut msg = MSG::default();
@@ -358,9 +388,16 @@ pub fn hold(
                     if let Some(act) = lost {
                         rt.switch(act);
                     }
+                    // Sources resize and change titles without an event we listen to.
+                    rt.update_mirrors();
                 }
                 WM_TIMER => {}
                 WAKE => {}
+                WM_LBUTTONUP if rt.mirror_source(msg.hwnd).is_some() => {
+                    if let Some(source) = rt.mirror_source(msg.hwnd) {
+                        activate(source);
+                    }
+                }
                 WM_LBUTTONUP if rt.switcher.as_ref().is_some_and(|o| o.hwnd() == msg.hwnd) => {
                     let (x, y) = (msg.lParam.0 as i16 as i32, (msg.lParam.0 >> 16) as i16 as i32);
                     if rt.switcher.as_mut().is_some_and(|o| o.pick(x, y)) {
@@ -374,7 +411,17 @@ pub fn hold(
             }
             let queue = QUEUE.with(|q| std::mem::take(&mut *q.borrow_mut()));
             let focus_changed = !queue.is_empty();
+            let mut windows_changed = false;
             for (event, hwnd) in queue {
+                windows_changed |= matches!(
+                    event,
+                    EVENT_OBJECT_SHOW
+                        | EVENT_OBJECT_DESTROY
+                        | EVENT_OBJECT_NAMECHANGE
+                        | EVENT_SYSTEM_FOREGROUND
+                        | EVENT_SYSTEM_MINIMIZESTART
+                        | EVENT_SYSTEM_MINIMIZEEND
+                );
                 match event {
                     EVENT_OBJECT_DESTROY => rt.forget(hwnd),
                     EVENT_OBJECT_SHOW | EVENT_OBJECT_NAMECHANGE => rt.refresh(HWND(hwnd as *mut c_void)),
@@ -392,6 +439,9 @@ pub fn hold(
                 rt.update_focus();
                 rt.draw_glows();
             }
+            if windows_changed {
+                rt.update_mirrors();
+            }
         }
 
         for hook in hooks {
@@ -402,6 +452,7 @@ pub fn hold(
         }
         rt.xray_on = false;
         rt.switcher = None;
+        rt.mirrors = None;
         SWITCH_KEYS.with(|k| *k.borrow_mut() = None);
         rt.restore_all();
         if let Some((_, overlay)) = rt.focus.take() {
@@ -548,6 +599,21 @@ pub(super) fn register_class(class: &WNDCLASSW) -> io::Result<()> {
     } else {
         Err(error)
     }
+}
+
+/// Hidden by the system although visible: on another virtual desktop, or a suspended app.
+fn cloaked(hwnd: HWND) -> bool {
+    let mut value = 0u32;
+    // SAFETY: a 4-byte out value for DWMWA_CLOAKED.
+    let read = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            &mut value as *mut u32 as *mut c_void,
+            size_of::<u32>() as u32,
+        )
+    };
+    read.is_ok() && value != 0
 }
 
 pub(super) fn top_level_windows() -> Vec<HWND> {
@@ -712,6 +778,71 @@ impl Runtime {
         }
     }
 
+    /// The window a mirror popup shows, when `hwnd` is one.
+    fn mirror_source(&self, hwnd: HWND) -> Option<HWND> {
+        self.mirrors
+            .as_ref()
+            .and_then(|(_, popups)| popups.source_of(hwnd))
+    }
+
+    /// Points every mirror at the first window it matches, front to back, and places it on
+    /// its monitor; hides it when nothing matches, its window is in front (by default) or a
+    /// fullscreen app has its monitor.
+    fn update_mirrors(&mut self) {
+        if self.mirrors.is_none() {
+            return;
+        }
+        let windows: Vec<(HWND, WindowInfo)> = top_level_windows()
+            .into_iter()
+            // SAFETY: read-only queries; a stale handle just fails.
+            .filter(|&h| unsafe { !IsIconic(h).as_bool() } && !cloaked(h))
+            .filter_map(|h| self.info(h).map(|i| (h, i)))
+            .collect();
+        let full = self.fullscreen_monitor();
+        let screens = monitors();
+        // SAFETY: no preconditions.
+        let fg = unsafe { GetForegroundWindow() };
+        let Some((list, popups)) = self.mirrors.as_mut() else {
+            return;
+        };
+        let targets: Vec<Option<Target>> = list
+            .iter()
+            .zip(mirror::pick(list, &windows))
+            .map(|(m, source)| {
+                let source = source?;
+                let c = &m.config;
+                if c.hide_when_focused && source == fg {
+                    return None;
+                }
+                let screen = match c.monitor {
+                    Some(n) => screens.get(n as usize - 1)?,
+                    None => screens.first()?,
+                };
+                if full == Some(screen.handle) {
+                    return None;
+                }
+                let mut r = RECT::default();
+                // SAFETY: read-only queries with a correctly sized out struct.
+                let known = unsafe {
+                    if c.client_only {
+                        GetClientRect(source, &mut r)
+                    } else {
+                        GetWindowRect(source, &mut r)
+                    }
+                };
+                known.ok()?;
+                let size = (r.right - r.left, r.bottom - r.top);
+                Some(Target {
+                    source,
+                    rect: m.place(size, screen.work, scale(screen.handle))?,
+                    opacity: (c.opacity * 255.0).round() as u8,
+                    client_only: c.client_only,
+                })
+            })
+            .collect();
+        popups.update(&targets);
+    }
+
     /// Runs one switcher step from the keyboard hook, a lost key-up or a click.
     fn switch(&mut self, act: Act) {
         let theme = self.palette.theme(Theme::aizome());
@@ -745,6 +876,9 @@ impl Runtime {
         let mut profile = profile.clone();
         profile.palette.mode = mode;
         self.palette = profile.palette();
+        if let Some((_, popups)) = &self.mirrors {
+            popups.set_background(colorref(self.palette.background()));
+        }
         self.refresh_all();
         self.draw_glows();
         let name = if mode == Mode::Light { "light" } else { "dark" };
@@ -1059,6 +1193,7 @@ pub fn list() -> Vec<WindowInfo> {
         frame: 0,
         schedule: None,
         switcher: None,
+        mirrors: None,
     };
     top_level_windows()
         .into_iter()

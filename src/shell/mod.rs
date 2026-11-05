@@ -3,7 +3,8 @@
 //! state-colored borders, focus dimming (`[focus]`), the x-ray hold key (`[xray]`), commands
 //! on leader-key chords and hot corners (`[[command]]`, see [`command`]), and edge glows that
 //! show a state (`[[glow]]`, see [`glow`]), the dark/light schedule (`[schedule]`, see
-//! [`schedule`]), and the Alt+Tab replacement (`[switcher]`, see [`switcher`]).
+//! [`schedule`]), the Alt+Tab replacement (`[switcher]`, see [`switcher`]), and live copies of
+//! other windows (`[[mirror]]`, see [`mirror`]).
 //!
 //! Nothing here is persistent. `noren run` applies the rules to every window, follows new
 //! windows and state changes, and on exit puts every touched window back as it was.
@@ -14,6 +15,9 @@ pub mod glow;
 #[cfg(windows)]
 mod glow_win;
 pub mod keys;
+pub mod mirror;
+#[cfg(windows)]
+mod mirror_win;
 pub mod rules;
 pub mod schedule;
 pub mod state;
@@ -63,6 +67,8 @@ pub struct Live {
     pub schedule: Option<schedule::Tracker>,
     /// The Alt+Tab replacement (`[switcher]`).
     pub switcher: Option<switcher::Switcher>,
+    /// Live copies of other windows (`[[mirror]]`).
+    pub mirrors: Vec<mirror::Mirror>,
     /// The profile, re-applied in the scheduled mode.
     pub profile: Profile,
     /// The profile as TOML, handed to the command palette.
@@ -88,6 +94,7 @@ impl Live {
                 .as_ref()
                 .map(switcher::Switcher::new)
                 .transpose()?,
+            mirrors: mirror::mirrors(&profile.mirror)?,
             profile: profile.clone(),
             source: toml::to_string(profile).map_err(|e| e.to_string())?,
         };
@@ -98,9 +105,10 @@ impl Live {
             && live.glows.is_empty()
             && live.schedule.is_none()
             && live.switcher.is_none()
+            && live.mirrors.is_empty()
         {
             return Err(
-                "the profile has no [[window]] rules, [focus], [xray], chords, hot corners, [[glow]], [schedule] or [switcher], nothing to run"
+                "the profile has no [[window]] rules, [focus], [xray], chords, hot corners, [[glow]], [schedule], [switcher] or [[mirror]], nothing to run"
                     .into(),
             );
         }
