@@ -207,3 +207,49 @@ fn window_grows_to_cover_the_popup_and_render_paints_inside_it() {
         "outside stays transparent (click-through)"
     );
 }
+
+#[test]
+fn a_layout_hides_cells_and_closes_their_popup() {
+    let (mut p, now) = panel();
+    p.reveal_now();
+    p.tick(now, None, false);
+    let plain = p.cell_rect("plain").unwrap();
+    assert!(p.open_popup("probe", now));
+    p.tick(now + MS, None, false);
+    assert!(p.popup_rect().is_some());
+
+    p.set_layout(Some(vec!["plain".into()]));
+    p.tick(now + 2 * MS, None, false);
+    assert_eq!(p.cell_rect("probe"), None);
+    assert_eq!(p.popup_rect(), None);
+    assert!(!p.open_popup("probe", now));
+    // The remaining cell moves to the center on its own and still gets its own rect.
+    let alone = p.cell_rect("plain").unwrap();
+    assert!(alone.w > 0.0 && alone.x != plain.x, "{alone:?} vs {plain:?}");
+
+    p.set_layout(None);
+    p.tick(now + 3 * MS, None, false);
+    assert_eq!(p.cell_rect("plain"), Some(plain));
+    assert!(p.cell_rect("probe").is_some());
+}
+
+#[test]
+fn the_switcher_drives_the_layout_from_tick() {
+    let (mut p, now) = panel();
+    p.reveal_now();
+    let layouts = vec![crate::layouts::LayoutConfig {
+        exe: vec!["Code.exe".into()],
+        desktop: None,
+        widgets: vec!["probe".into()],
+    }];
+    p.set_switcher(crate::layouts::Switcher::new(layouts, || {
+        Some(crate::layouts::Where {
+            exe: "code.exe".into(),
+            desktop: None,
+        })
+    }));
+    let r = p.tick(now, None, false);
+    assert!(r.redraw);
+    assert!(p.cell_rect("probe").is_some());
+    assert_eq!(p.cell_rect("plain"), None);
+}

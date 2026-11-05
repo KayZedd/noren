@@ -354,6 +354,22 @@ cover_colors = true   # domyślnie; false zostawia akcent profilu
 
 Akcent pochodzi z okładki: najbardziej nasycony odcień, który zajmuje sensowną część obrazka, ustawiony na jasność czytelną na panelu. Szara albo czarno-biała okładka zostawia akcent profilu. `[media]` działa samo albo obok `[[widget]]`. [examples/media.rs](examples/media.rs) renderuje widżet z wymyślonym utworem na dowolnym systemie.
 
+### Układy per aplikacja i pulpit
+
+`[[layout]]` wybiera, które widżety panelu są widoczne, gdy dany program jest na pierwszym planie albo bieżący jest dany pulpit wirtualny:
+
+```toml
+[[layout]]
+exe = ["Code.exe", "WindowsTerminal.exe"]   # którykolwiek z nich na wierzchu
+widgets = ["git", "cpu"]
+
+[[layout]]
+desktop = "Music"                            # nazwa z Widoku zadań albo "Desktop 2", jeśli nie zmieniona
+widgets = ["media"]
+```
+
+`widgets` wymienia `[[widget]]` i `media`; zachowują kolejność z panelu. Układ potrzebuje `exe`, `desktop` albo obu, i oba muszą pasować. Wygrywa pierwszy pasujący układ; bez dopasowania widać wszystkie widżety. Wielkość liter nie ma znaczenia; nienazwany pulpit to zawsze "Desktop N", niezależnie od języka Windows (także gdy Widok zadań pokazuje "Pulpit 2"). Kliknięcie samego panelu zostawia bieżący układ, a popup widżetu, który znika, zamyka się. Panel sprawdza to około cztery razy na sekundę.
+
 ### W Ruście
 
 Górny panel:
@@ -403,7 +419,7 @@ noren rollback [--force]                             # cofnij najnowszą transak
 noren log                                            # lista transakcji
 noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule] do Ctrl+C
 noren schedule <profile.toml>                        # dzisiejsze godziny przełączenia ciemny/jasny
-noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]] i [media]
+noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]], [media] i [[layout]]
 noren card <profile.toml> <out.png> [--scale <s>]    # profil jako PNG do udostępnienia
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
@@ -427,7 +443,7 @@ W planach:
 - [x] Każdy program wypisujący JSON jest widżetem
 - [ ] Widżety przyklejone do okien innych aplikacji
 - [ ] Żywe lustra miniatur DWM
-- [ ] Układy per aplikacja na pierwszym planie i per pulpit wirtualny
+- [x] Układy per aplikacja na pierwszym planie i per pulpit wirtualny
 - [ ] Położenie widżetów i kolor tekstu dobierane z tapety
 - [x] Motyw zależny od pory dnia i wschodu słońca
 - [x] Poświata krawędzi ekranu jako status

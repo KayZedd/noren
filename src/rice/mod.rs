@@ -16,7 +16,7 @@
 
 mod merge;
 mod profile;
-mod store;
+pub(crate) mod store;
 
 use std::fmt;
 use std::fs;

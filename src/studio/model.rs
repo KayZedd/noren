@@ -55,6 +55,10 @@ border = "accent.7"
 # [media]                # now playing on `noren panel`, colored from the album cover
 # cover_colors = true
 
+# [[layout]]             # which panel widgets show while an app is in front or on a desktop
+# exe = ["Code.exe"]
+# widgets = ["weather"]
+
 # [schedule]             # light from sunrise, dark from 21:00 while Live holds the profile
 # light = "sunrise"
 # dark = "21:00"

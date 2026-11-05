@@ -23,6 +23,9 @@ mod win;
 use std::io;
 use std::path::PathBuf;
 
+#[cfg(windows)]
+pub(crate) use win::exe_name;
+
 pub use command::{Action, Command, Commands};
 pub use focus::{Focus, Xray};
 pub use glow::Glow;

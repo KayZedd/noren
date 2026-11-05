@@ -56,6 +56,9 @@ pub fn features(p: &Profile) -> Vec<String> {
     if p.media.is_some() {
         out.push("now playing".into());
     }
+    if !p.layout.is_empty() {
+        out.push(count(p.layout.len(), "panel layout", "panel layouts"));
+    }
     if let Some(s) = &p.schedule {
         out.push(format!("light {} · dark {}", s.light, s.dark));
     }
@@ -251,6 +254,7 @@ mod tests {
         let p = profile(
             "[windows]\n[focus]\ndim = 0.3\n[[window]]\nexe = \"a.exe\"\nopacity = 0.9\n\
              [[window]]\nexe = \"b.exe\"\nopacity = 0.9\n[media]\n\
+             [[layout]]\ndesktop = \"Music\"\nwidgets = [\"media\"]\n\
              [schedule]\nlight = \"sunrise\"\ndark = \"21:00\"\nlatitude = 52.2\nlongitude = 21.0\n",
         );
         assert_eq!(
@@ -260,6 +264,7 @@ mod tests {
                 "2 window rules",
                 "focus dimming",
                 "now playing",
+                "1 panel layout",
                 "light sunrise · dark 21:00",
             ]
         );

@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use tiny_skia::Pixmap;
 
 use crate::layout::{Frame, layout};
+use crate::layouts::Switcher;
 use crate::render::{Canvas, render_frame};
 use crate::surface::{Layer, MonitorInfo, Placement, Response, Surface};
 use crate::widget::{AnyWidget, Erased};
@@ -97,6 +98,9 @@ pub struct Panel {
     cells: Vec<Rect>,
     popup: Option<Built>,
     dirty: bool,
+    /// Widget ids the current layout shows; `None` shows all (see [`crate::layouts`]).
+    only: Option<Vec<String>>,
+    switcher: Option<Switcher>,
 }
 
 impl Panel {
@@ -133,6 +137,8 @@ impl Panel {
             cells: Vec::new(),
             popup: None,
             dirty: true,
+            only: None,
+            switcher: None,
         }
     }
 
@@ -140,6 +146,32 @@ impl Panel {
         self.widgets.push(Box::new(Erased::new(widget)));
         self.dirty = true;
         self
+    }
+
+    /// Show only the widgets with these ids, in their panel order; `None` shows all. A popup
+    /// of a widget that goes away closes at once.
+    pub fn set_layout(&mut self, only: Option<Vec<String>>) {
+        if only == self.only {
+            return;
+        }
+        self.only = only;
+        if self.shown.is_some_and(|i| !self.visible(i)) {
+            self.open = None;
+            self.shown = None;
+            self.popup_anim.reset(0.0);
+            self.scrolls.clear();
+        }
+        self.dirty = true;
+    }
+
+    /// Switch layouts as the foreground app or virtual desktop changes, checked every tick.
+    pub fn set_switcher(&mut self, switcher: Switcher) {
+        self.switcher = Some(switcher);
+    }
+
+    fn visible(&self, i: usize) -> bool {
+        let id = self.widgets[i].id();
+        self.only.as_ref().is_none_or(|only| only.iter().any(|o| o == id))
     }
 
     pub fn theme(&self) -> &Theme {
@@ -196,6 +228,9 @@ impl Panel {
     /// Advance time: poll widgets, run auto-hide, rebuild views. `pointer` is the cursor in
     /// panel coordinates (`None` when it is on another monitor).
     pub fn tick(&mut self, now: Instant, pointer: Option<(f32, f32)>, fullscreen: bool) -> Response {
+        if let Some(only) = self.switcher.as_mut().and_then(|s| s.poll(now)) {
+            self.set_layout(only);
+        }
         let mut redraw = std::mem::take(&mut self.dirty);
         for widget in &mut self.widgets {
             redraw |= widget.poll(now);
@@ -277,8 +312,12 @@ impl Panel {
         }
 
         // Bar.
+        let visible: Vec<bool> = (0..self.widgets.len()).map(|i| self.visible(i)).collect();
         let mut cells = Vec::with_capacity(self.widgets.len());
         for (i, widget) in self.widgets.iter_mut().enumerate() {
+            if !visible[i] {
+                continue;
+            }
             let ctx = Context {
                 theme: &theme,
                 now,
@@ -319,7 +358,6 @@ impl Panel {
             theme.font_size(),
             &self.scrolls,
         );
-        // Cell rectangles are the root's direct children, in order.
         self.cells = cell_rects(&frame, self.widgets.len());
         self.bar = Some(Built {
             frame,
@@ -594,6 +632,9 @@ impl Panel {
         let Some(i) = self.widgets.iter().position(|w| w.id() == id) else {
             return false;
         };
+        if !self.visible(i) {
+            return false;
+        }
         self.set_open(Some(i), now);
         true
     }
@@ -626,9 +667,12 @@ impl Panel {
         p.frame.find_text(needle).map(|r| r.translate(p.rect.x, p.rect.y))
     }
 
-    /// Bar cell of a widget in panel coordinates.
+    /// Bar cell of a widget in panel coordinates; `None` while the layout hides it.
     pub fn cell_rect(&self, id: &str) -> Option<Rect> {
         let i = self.widgets.iter().position(|w| w.id() == id)?;
+        if !self.visible(i) {
+            return None;
+        }
         let bar = self.bar.as_ref()?;
         self.cells.get(i).map(|r| r.translate(bar.rect.x, bar.rect.y))
     }
@@ -641,19 +685,18 @@ impl Panel {
     }
 }
 
-/// Cell rectangles: the nodes carrying `Toggle(i)`, in widget order. Hidden cells get an
-/// empty rect.
+/// Cell rectangles by widget index: the first node carrying `Toggle(i)`. Widgets the layout
+/// hides have no node and get an empty rect.
 fn cell_rects(frame: &Frame<Target>, count: usize) -> Vec<Rect> {
-    let mut cells = Vec::with_capacity(count);
+    let mut cells = vec![None; count];
     for node in &frame.nodes {
         if let Some(Target::Toggle(i)) = node.action
-            && i == cells.len()
+            && let Some(cell @ None) = cells.get_mut(i)
         {
-            cells.push(node.rect);
+            *cell = Some(node.rect);
         }
     }
-    cells.resize(count, Rect::default());
-    cells
+    cells.into_iter().map(Option::unwrap_or_default).collect()
 }
 
 /// Soft shadow: stacked rounded rectangles with quadratic falloff.

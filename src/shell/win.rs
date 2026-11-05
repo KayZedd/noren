@@ -497,7 +497,7 @@ fn wide_to_string(buf: &[u16], len: i32) -> String {
     String::from_utf16_lossy(&buf[..len.clamp(0, buf.len() as i32) as usize])
 }
 
-fn exe_name(pid: u32) -> String {
+pub(crate) fn exe_name(pid: u32) -> String {
     // SAFETY: handle opened with the least access that allows the query, closed below.
     unsafe {
         let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {

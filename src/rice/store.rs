@@ -101,7 +101,7 @@ impl Store for SystemStore {
 }
 
 #[cfg(windows)]
-mod registry {
+pub(crate) mod registry {
     use std::io;
 
     use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, LPARAM, WIN32_ERROR, WPARAM};
@@ -208,7 +208,7 @@ mod registry {
 }
 
 #[cfg(not(windows))]
-mod registry {
+pub(crate) mod registry {
     use std::io;
 
     use crate::rice::RegKind;

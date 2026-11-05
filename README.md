@@ -354,6 +354,22 @@ cover_colors = true   # default; false keeps the profile's accent
 
 The accent comes from the cover: the most colorful hue that covers a fair share of the picture, set to a lightness that reads on the panel. A grey or black-and-white cover keeps the profile's accent. `[media]` works alone or next to `[[widget]]`s. [examples/media.rs](examples/media.rs) renders the widget with a made-up track on any OS.
 
+### Layouts per app and desktop
+
+`[[layout]]` picks which panel widgets show while a program is in front or a virtual desktop is current:
+
+```toml
+[[layout]]
+exe = ["Code.exe", "WindowsTerminal.exe"]   # any of these in front
+widgets = ["git", "cpu"]
+
+[[layout]]
+desktop = "Music"                            # Task View name, or "Desktop 2" if never renamed
+widgets = ["media"]
+```
+
+`widgets` names `[[widget]]`s and `media`; they keep their panel order. A layout needs `exe`, `desktop` or both, and both must hold. The first layout that matches wins; with none, every widget shows. Names ignore case; a desktop never renamed is "Desktop N" whatever the Windows language. Clicking the panel itself keeps the current layout, and a popup of a widget that goes away closes. The panel checks about four times a second.
+
 ### In Rust
 
 A top panel:
@@ -403,7 +419,7 @@ noren rollback [--force]                             # undo the newest transacti
 noren log                                            # list transactions
 noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule] until Ctrl+C
 noren schedule <profile.toml>                        # today's dark/light switch times
-noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs and [media]
+noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs, [media] and [[layout]]s
 noren card <profile.toml> <out.png> [--scale <s>]    # the profile as a PNG to share
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
@@ -427,7 +443,7 @@ Planned:
 - [x] Any program printing JSON is a widget
 - [ ] Widgets glued to other apps' windows
 - [ ] Live DWM thumbnail mirrors
-- [ ] Layouts per foreground app and virtual desktop
+- [x] Layouts per foreground app and virtual desktop
 - [ ] Widget placement and text color picked from the wallpaper
 - [x] Theme by time of day and sunrise
 - [x] Ambient edge glow for status

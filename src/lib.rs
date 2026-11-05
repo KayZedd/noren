@@ -18,6 +18,7 @@ pub mod geom;
 pub mod history;
 pub mod host;
 pub mod layout;
+pub mod layouts;
 pub mod media;
 pub mod palette;
 pub mod panel;

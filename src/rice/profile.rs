@@ -52,6 +52,10 @@
 //! [media]                  # now playing on the panel, colored from the cover (see `media`)
 //! cover_colors = true
 //!
+//! [[layout]]               # panel widgets per foreground app or desktop (see `layouts`)
+//! exe = ["Code.exe"]
+//! widgets = ["weather"]
+//!
 //! [schedule]               # dark/light by the clock or the sun (see `shell::schedule`)
 //! light = "sunrise"
 //! dark = "21:00"
@@ -70,6 +74,7 @@ use serde_json::{Value, json};
 use super::merge::{JsonEdit, merge_jsonc, replace_block};
 use super::{Change, Slot, Store};
 use crate::exec::ExecConfig;
+use crate::layouts::{self, LayoutConfig};
 use crate::media::{MediaConfig, MediaWidget};
 use crate::palette::{Palette, PaletteSpec, export};
 use crate::shell::command::{ChordsConfig, CommandConfig, Commands, CornersConfig};
@@ -113,6 +118,9 @@ pub struct Profile {
     pub widget: Vec<ExecConfig>,
     /// The now-playing widget on `noren panel` (see [`crate::media`]).
     pub media: Option<MediaConfig>,
+    /// Which panel widgets show per foreground app and virtual desktop (see [`crate::layouts`]).
+    #[serde(default)]
+    pub layout: Vec<LayoutConfig>,
     /// Dark and light by the clock or the sun, held by `noren run`.
     pub schedule: Option<ScheduleConfig>,
 }
@@ -187,7 +195,17 @@ impl Profile {
         profile.xray.as_ref().map(Xray::new).transpose()?;
         profile.commands()?;
         glow::glows(&profile.glow)?;
+        layouts::validate(&profile.layout, &profile.panel_widgets())?;
         Ok(profile)
+    }
+
+    /// The ids of the panel's widgets, in panel order.
+    fn panel_widgets(&self) -> Vec<&str> {
+        let media = self.media.as_ref().map(|_| layouts::MEDIA);
+        media
+            .into_iter()
+            .chain(self.widget.iter().map(|w| w.name.as_str()))
+            .collect()
     }
 
     /// The `[[command]]`s with their `[chords]` and `[corners]` settings, validated.
@@ -215,6 +233,9 @@ impl Profile {
             panel.add(MediaWidget::new(m.clone(), self.palette.clone()));
         }
         crate::exec::add(&mut panel, &self.widget)?;
+        if !self.layout.is_empty() {
+            panel.set_switcher(layouts::Switcher::system(self.layout.clone()));
+        }
         Ok(panel)
     }
 
@@ -466,6 +487,34 @@ profile = "ff"
         assert_eq!(p.widget[0].interval, Some(60.0));
         assert_eq!(Profile::parse(&toml::to_string(&p).unwrap()).unwrap(), p);
         assert!(Profile::parse(&text.replace("interval", "every")).is_err());
+    }
+
+    #[test]
+    fn layouts_parse_and_name_only_panel_widgets() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n[media]\n\
+                    [[widget]]\nname = \"git\"\nrun = [\"git\"]\n";
+        let text = format!(
+            "{base}[[layout]]\nexe = [\"Code.exe\"]\nwidgets = [\"git\", \"media\"]\n\
+             [[layout]]\ndesktop = \"Music\"\nwidgets = [\"media\"]\n"
+        );
+        let p = Profile::parse(&text).unwrap();
+        assert_eq!(p.layout.len(), 2);
+        assert_eq!(p.layout[1].desktop.as_deref(), Some("Music"));
+        assert_eq!(Profile::parse(&toml::to_string(&p).unwrap()).unwrap(), p);
+        let e = Profile::parse(&format!(
+            "{base}[[layout]]\nexe = [\"a.exe\"]\nwidgets = [\"cpu\"]\n"
+        ))
+        .unwrap_err();
+        assert!(e.contains("layout 1: no widget named \"cpu\""), "{e}");
+        let e = Profile::parse(&format!("{base}[[layout]]\nwidgets = [\"git\"]\n")).unwrap_err();
+        assert!(e.contains("set exe, desktop or both"), "{e}");
+        let no_media = base.replace("[media]\n", "");
+        assert!(
+            Profile::parse(&format!(
+                "{no_media}[[layout]]\nexe = [\"a.exe\"]\nwidgets = [\"media\"]\n"
+            ))
+            .is_err()
+        );
     }
 
     #[test]
