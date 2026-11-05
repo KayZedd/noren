@@ -459,6 +459,26 @@ SCmxYKS9V+UnmVKzWbiZFvLH0jvLOzI7J6Vgns8eU5ASuglMondFinv3EVvGhe9DJp+93iQIapjKwEWX
         assert!(verify_sums(TEST_SUMS.as_bytes(), TEST_SIGNATURE, PUBLIC_KEY, "noren v9.9.9").is_err());
     }
 
+    /// The files of the v0.1.0 release, as the release workflow made them on Windows.
+    #[test]
+    fn the_published_release_verifies_with_the_built_in_key() {
+        let sums = "\
+91f34592a39e04a2584f413a7f08a89a9b25e69a0a5682cad431d84bb25df334 *noren.exe
+6d5ab3275b04e1217a815f1cd44baf914d73fb5af98f51f52c06aa198fe923e2 *noren-studio.exe
+";
+        let signature = "\
+untrusted comment: signature from rsign secret key
+RUSxKLWIUgSl55883qP1VHmTCl1Lq6MuV+WXxNv7dxj2aFLnzjg5uOixFGJgIwjjO7VGOB7kYlaO1WvsVDvRCSulzYPB9afhxA0=
+trusted comment: noren v0.1.0
+IZI486+GfWv6kTZXpelYUjbJo07QSOa5rQIplAL5k6FpErlHJhbD8USNkb/PvieFnrW4mKYRluwYd0PI2SJyCw==
+";
+        let parsed = verify_sums(sums.as_bytes(), signature, PUBLIC_KEY, "noren v0.1.0").unwrap();
+        assert_eq!(
+            parsed.keys().collect::<Vec<_>>(),
+            ["noren-studio.exe", "noren.exe"]
+        );
+    }
+
     #[test]
     fn the_release_key_decodes() {
         assert!(minisign_verify::PublicKey::from_base64(PUBLIC_KEY).is_ok());
