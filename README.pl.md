@@ -385,6 +385,25 @@ height = 26              # wysokość pigułki, 16 do 96, domyślnie 26
 
 Widżet śledzi pierwsze pasujące okno w kolejności z i zostaje przy nim, dopóki się nie zamknie. Siedzi tuż nad tym oknem, więc co zasłania okno, zasłania też widżet, i chowa się, gdy okno jest zminimalizowane, na innym pulpicie wirtualnym albo zniknęło. Kliknięcie uruchamia `on_click`; przyklejone widżety nie mają popupu. Pokazuje je `noren panel`, z panelem albo bez.
 
+### Na pulpicie
+
+Tabela `desktop` zdejmuje `[[widget]]` z panelu i kładzie go na tapecie, pod wszystkimi oknami. Bez `anchor` sam wybiera najspokojniejszy róg albo krawędź:
+
+```toml
+[[widget]]
+name = "weather"
+run = ["curl", "-s", "wttr.in/?format=%t"]
+interval = 600
+[widget.desktop]
+# anchor = "top_left"    # pomiń, żeby wybrać najspokojniejsze miejsce tapety
+offset = [32, 32]        # od zakotwiczonych krawędzi, piksele logiczne, domyślnie 32
+monitor = 1              # numeracja jak w regułach okien, domyślnie główny
+height = 40              # 16 do 200, domyślnie 40
+text = "auto"            # "auto" czytelny na tapecie, "palette" zostawia kolor palety
+```
+
+noren dekoduje tapetę w 256 pikselach i ocenia każdy róg, potem każdą krawędź, po tym, jak bardzo zmienia się jasność i jak ostre są krawędzie; wygrywa najspokojniejsze miejsce, przy remisie prawy górny róg. Przy `text = "auto"` zwykły tekst bierze ten z kolorów tekstu i tła palety, który ma większy kontrast (WCAG) z tapetą pod widżetem; kolory ok, warn i fail zostają. Oba wybory zapadają na nowo, gdy zmieni się plik tapety albo monitor (sprawdzane co 30 s), nie gdy zmieni się tekst, więc widżet nie wędruje. Widżet ma `glue` albo `desktop`, nie oba.
+
 ### Teraz odtwarzane
 
 `[media]` dodaje widżet bieżącej sesji multimediów Windows: Spotify, karta przeglądarki, foobar2000, wszystko, co widać w wysuwanym panelu głośności. Na panelu jest okładka, tytuł i wykonawca; popup dokłada album, pasek postępu oraz poprzedni, odtwarzaj/pauza i następny.
@@ -463,7 +482,7 @@ noren rollback [--force]                             # cofnij najnowszą transak
 noren log                                            # lista transakcji
 noren run <profile.toml>                             # trzymaj reguły, [focus], [xray], akordy, rogi, poświaty, [schedule], [switcher], lustra do Ctrl+C
 noren schedule <profile.toml>                        # dzisiejsze godziny przełączenia ciemny/jasny
-noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]], [media], [[layout]]; przyklejone widżety
+noren panel <profile.toml> [--monitor <n>]           # górny panel z programami z [[widget]], [media], [[layout]]; widżety przyklejone i na pulpicie
 noren card <profile.toml> <out.png> [--scale <s>]    # profil jako PNG do udostępnienia
 noren windows [<profile.toml>]                       # okna i pasujące reguły
 noren state [<nazwa> <ok|fail|warn|busy|clear>]      # ustaw albo wypisz stany
@@ -488,7 +507,7 @@ W planach:
 - [x] Widżety przyklejone do okien innych aplikacji
 - [x] Żywe lustra miniatur DWM
 - [x] Układy per aplikacja na pierwszym planie i per pulpit wirtualny
-- [ ] Położenie widżetów i kolor tekstu dobierane z tapety
+- [x] Położenie widżetów i kolor tekstu dobierane z tapety
 - [x] Motyw zależny od pory dnia i wschodu słońca
 - [x] Poświata krawędzi ekranu jako status
 - [x] Akordy leader-key, paleta komend, gorące rogi
@@ -499,7 +518,8 @@ W planach:
 
 ## Ograniczenia
 
-- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi, przełączania według harmonogramu, przełącznika okien, luster okien i przyklejonych widżetów. Zgłoszenia mile widziane.
+- **Jeszcze nie uruchomione na prawdziwym Windowsie.** Host Win32, zapisy do rejestru i broadcast akcentu są sprawdzone przez `cargo clippy --target x86_64-pc-windows-msvc` i testy jednostkowe, nie na żywym pulpicie. To samo dotyczy zasobnika i tła akrylowego studia, akordów, gorących rogów, okna palety, poświat krawędzi, przełączania według harmonogramu, przełącznika okien, luster okien, przyklejonych widżetów i widżetów na pulpicie. Zgłoszenia mile widziane.
+- Widżety na pulpicie czytają tapetę tak, jak pokazuje ją dopasowanie "Wypełnienie" Windowsa, i biorą ten sam obraz na każdy monitor; inne dopasowania, pokaz slajdów między sprawdzeniami i osobne tapety na monitorach mogą postawić je w bardziej zajętym miejscu.
 - Zaokrąglone rogi oraz kolory ramki, paska tytułu i tekstu wymagają Windows 11. Tła wymagają Windows 11 22H2 i prześwitują tylko tam, gdzie aplikacja maluje przezroczyste tło; większość klasycznych aplikacji Win32 je zamalowuje.
 - Okna, które już są warstwowe (same rysują przezroczystość), zachowują swoją przezroczystość pod x-ray i regułami `opacity`. Kombinacja z samych modyfikatorów z Win, np. `Ctrl+Win`, może po puszczeniu otworzyć menu Start; dodaj klawisz.
 - Przełącznik okien nie słyszy klawiszy, gdy fokus ma okno uruchomione jako administrator (Windows nie daje tam hooka klawiatury zwykłemu procesowi), więc tam otwiera się systemowy Alt+Tab.

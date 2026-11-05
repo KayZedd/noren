@@ -385,6 +385,25 @@ height = 26              # the pill's height, 16 to 96, default 26
 
 The widget follows the first matching window in z-order and stays with it until it closes. It sits just above that window, so whatever covers the window covers the widget too, and it hides while the window is minimized, on another virtual desktop or gone. A click runs `on_click`; glued widgets have no popup. `noren panel` shows them, with a panel or without one.
 
+### On the desktop
+
+A `desktop` table takes a `[[widget]]` off the panel and puts it on the wallpaper, below every window. Leave out `anchor` and it picks the calmest corner or edge:
+
+```toml
+[[widget]]
+name = "weather"
+run = ["curl", "-s", "wttr.in/?format=%t"]
+interval = 600
+[widget.desktop]
+# anchor = "top_left"    # leave out to pick the calmest spot on the wallpaper
+offset = [32, 32]        # from the anchored edges, logical pixels, default 32
+monitor = 1              # same numbering as window rules, default the primary
+height = 40              # 16 to 200, default 40
+text = "auto"            # "auto" reads on the wallpaper, "palette" keeps the palette's
+```
+
+noren decodes the wallpaper at 256 pixels and scores each corner, then each edge, by how much its brightness varies and how sharp its edges are; the calmest wins, the top right on a tie. With `text = "auto"` plain text takes whichever of the palette's text and background colors has more contrast (WCAG) with the wallpaper under the widget; ok, warn and fail colors stay. Both are picked again when the wallpaper file or the monitor changes (checked every 30 s), not when the text does, so the widget does not wander. A widget can have `glue` or `desktop`, not both.
+
 ### Now playing
 
 `[media]` adds a widget for the current Windows media session: Spotify, a browser tab, foobar2000, anything that shows up in the volume flyout. The panel shows the cover, title and artist; the popup adds the album, a progress bar and previous, play/pause and next.
@@ -463,7 +482,7 @@ noren rollback [--force]                             # undo the newest transacti
 noren log                                            # list transactions
 noren run <profile.toml>                             # hold rules, [focus], [xray], chords, corners, glows, [schedule], [switcher], mirrors until Ctrl+C
 noren schedule <profile.toml>                        # today's dark/light switch times
-noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs, [media], [[layout]]s; glued widgets
+noren panel <profile.toml> [--monitor <n>]           # top panel with [[widget]] programs, [media], [[layout]]s; glued and desktop widgets
 noren card <profile.toml> <out.png> [--scale <s>]    # the profile as a PNG to share
 noren windows [<profile.toml>]                       # windows, and which rules match
 noren state [<name> <ok|fail|warn|busy|clear>]       # set or list states
@@ -488,7 +507,7 @@ Planned:
 - [x] Widgets glued to other apps' windows
 - [x] Live DWM thumbnail mirrors
 - [x] Layouts per foreground app and virtual desktop
-- [ ] Widget placement and text color picked from the wallpaper
+- [x] Widget placement and text color picked from the wallpaper
 - [x] Theme by time of day and sunrise
 - [x] Ambient edge glow for status
 - [x] Leader-key chords, command palette, hot corners
@@ -499,7 +518,8 @@ Planned:
 
 ## Limitations
 
-- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch, the window switcher, window mirrors and glued widgets. Reports are welcome.
+- **Not yet run on real Windows.** The Win32 host, the registry writes and the accent broadcast are checked with `cargo clippy --target x86_64-pc-windows-msvc` and unit tests, not on a live desktop. The same goes for the studio tray and acrylic backdrop, chords, hot corners, the palette window, edge glows, the schedule switch, the window switcher, window mirrors, glued widgets and desktop widgets. Reports are welcome.
+- Desktop widgets read the wallpaper as Windows' "Fill" fit shows it and use the same image on every monitor; other fits, slideshows between checks and per-monitor wallpapers can put them on a busier spot.
 - Rounded corners and border, caption and title colors need Windows 11. Backdrops need Windows 11 22H2 and only show through where the app paints a transparent background; most classic Win32 apps paint over it.
 - Windows that are already layered (they draw their own transparency) keep their opacity under x-ray and `opacity` rules. A combo of only modifiers with Win, like `Ctrl+Win`, can open the Start menu on release; add a key.
 - The window switcher hears no keys while a window running as administrator has the focus (Windows keeps a normal process's keyboard hook from it), so the system Alt+Tab opens there.

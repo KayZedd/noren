@@ -23,7 +23,7 @@ usage:
   noren card <profile.toml> <out.png>
                                    a PNG of the profile to share [--scale <s>, default 2]
   noren panel <profile.toml>       a top panel with the profile's [[widget]] programs and [media],
-                                   and the widgets glued to other apps' windows
+                                   the widgets glued to other apps' windows and on the desktop
                                    [--monitor <n>] [--screenshot <out.png>]
   noren schedule <profile.toml>    today's dark/light switch times from [schedule]
   noren commands <profile.toml>    list the profile's [[command]]s
@@ -221,6 +221,10 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             for (surface, glue) in profile.glued()? {
                 entries.push(Entry::new(surface, SurfaceOptions::glued(glue)));
+            }
+            for (surface, monitor) in profile.desktop()? {
+                let on = monitor.map_or(MonitorSelect::Primary, |m| MonitorSelect::Index(m as usize - 1));
+                entries.push(Entry::new(surface, SurfaceOptions::default().on(on)));
             }
             if entries.is_empty() {
                 return Err("the profile has no [[widget]] or [media]".into());

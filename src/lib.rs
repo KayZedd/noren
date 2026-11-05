@@ -12,6 +12,7 @@ pub mod anim;
 pub mod card;
 pub mod color;
 pub mod components;
+pub mod desk;
 pub mod element;
 pub mod exec;
 pub mod geom;
@@ -33,6 +34,7 @@ pub mod surface;
 pub mod text;
 pub mod theme;
 pub mod update;
+pub mod wallpaper;
 pub mod widget;
 
 pub use anim::{Animated, ease_out_cubic};

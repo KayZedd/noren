@@ -249,6 +249,14 @@ impl<V: View> Floating<V> {
         &self.view
     }
 
+    /// Pins the surface to another corner or edge.
+    pub fn set_anchor(&mut self, anchor: Anchor) {
+        if self.config.anchor != anchor {
+            self.config.anchor = anchor;
+            self.dirty = true;
+        }
+    }
+
     pub fn view_mut(&mut self) -> &mut V {
         self.dirty = true;
         &mut self.view

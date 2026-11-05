@@ -13,6 +13,8 @@
 
 #[cfg(windows)]
 mod smtc;
+#[cfg(windows)]
+pub(crate) use smtc::decode_stream;
 
 use std::rc::Rc;
 use std::sync::Arc;

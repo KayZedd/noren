@@ -238,6 +238,7 @@ mod tests {
                 exe: Some("a".into()),
                 ..Default::default()
             }),
+            desktop: None,
         };
         let widget = ExecWidget::spawn(config).unwrap();
         let mut surface = Glued::new(widget, 30.0).surface(Theme::aizome());

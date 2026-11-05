@@ -54,6 +54,8 @@ border = "accent.7"
 # [widget.glue]          # optional: ride on an app's window instead of the panel
 # exe = "Code.exe"
 # anchor = "top_right"
+# [widget.desktop]       # or sit on the wallpaper, placed and colored to read on it
+# text = "auto"
 
 # [media]                # now playing on `noren panel`, colored from the album cover
 # cover_colors = true

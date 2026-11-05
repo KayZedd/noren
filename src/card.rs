@@ -50,12 +50,17 @@ pub fn features(p: &Profile) -> Vec<String> {
     if !p.glow.is_empty() {
         out.push(count(p.glow.len(), "edge glow", "edge glows"));
     }
+    let on_panel = p.widget.iter().filter(|w| w.on_panel()).count();
     let glued = p.widget.iter().filter(|w| w.glue.is_some()).count();
-    if p.widget.len() > glued {
-        out.push(count(p.widget.len() - glued, "panel widget", "panel widgets"));
-    }
-    if glued > 0 {
-        out.push(count(glued, "glued widget", "glued widgets"));
+    let desktop = p.widget.iter().filter(|w| w.desktop.is_some()).count();
+    for (n, one, many) in [
+        (on_panel, "panel widget", "panel widgets"),
+        (glued, "glued widget", "glued widgets"),
+        (desktop, "desktop widget", "desktop widgets"),
+    ] {
+        if n > 0 {
+            out.push(count(n, one, many));
+        }
     }
     if p.media.is_some() {
         out.push("now playing".into());
@@ -268,7 +273,8 @@ mod tests {
              [schedule]\nlight = \"sunrise\"\ndark = \"21:00\"\nlatitude = 52.2\nlongitude = 21.0\n\
              [switcher]\n[[mirror]]\ntitle = \"*log*\"\n\
              [[widget]]\nname = \"a\"\nrun = [\"a\"]\n\
-             [[widget]]\nname = \"b\"\nrun = [\"b\"]\n[widget.glue]\nexe = \"Code.exe\"\n",
+             [[widget]]\nname = \"b\"\nrun = [\"b\"]\n[widget.glue]\nexe = \"Code.exe\"\n\
+             [[widget]]\nname = \"c\"\nrun = [\"c\"]\n[widget.desktop]\n",
         );
         assert_eq!(
             features(&p),
@@ -278,6 +284,7 @@ mod tests {
                 "focus dimming",
                 "1 panel widget",
                 "1 glued widget",
+                "1 desktop widget",
                 "now playing",
                 "1 panel layout",
                 "light sunrise · dark 21:00",

@@ -32,6 +32,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::components::{caption, ring};
+use crate::desk::{Desk, DeskConfig, OnWallpaper};
 use crate::glue::{Glue, GlueConfig, Glued};
 use crate::widget::{Command, Context, Widget};
 use crate::{Color, Element, Theme, column, row, text};
@@ -55,6 +56,9 @@ pub struct ExecConfig {
     /// Ride on another app's window instead of the panel (see [`crate::glue`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glue: Option<GlueConfig>,
+    /// Sit on the desktop instead of the panel (see [`crate::desk`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desktop: Option<DeskConfig>,
 }
 
 impl ExecConfig {
@@ -81,7 +85,18 @@ impl ExecConfig {
         if let Some(g) = &self.glue {
             Glue::new(&who, g)?;
         }
+        if let Some(d) = &self.desktop {
+            if self.glue.is_some() {
+                return Err(format!("{who}: glue and desktop do not go together, pick one"));
+            }
+            d.validate(&who)?;
+        }
         Ok(())
+    }
+
+    /// On the panel: neither glued to a window nor on the desktop.
+    pub fn on_panel(&self) -> bool {
+        self.glue.is_none() && self.desktop.is_none()
     }
 }
 
@@ -314,10 +329,10 @@ pub fn validate(configs: &[ExecConfig]) -> Result<(), String> {
     Ok(())
 }
 
-/// Adds the widgets that are not glued to a window to the panel.
+/// Adds the widgets that are neither glued to a window nor on the desktop to the panel.
 pub fn add(panel: &mut crate::Panel, configs: &[ExecConfig]) -> Result<(), String> {
     validate(configs)?;
-    for c in configs.iter().filter(|c| c.glue.is_none()) {
+    for c in configs.iter().filter(|c| c.on_panel()) {
         panel.add(ExecWidget::spawn(c.clone())?);
     }
     Ok(())
@@ -335,6 +350,25 @@ pub fn glued(
         .map(|(c, g)| {
             let widget = ExecWidget::spawn(c.clone())?;
             Ok((Glued::new(widget, g.height).surface(theme.clone()), g))
+        })
+        .collect()
+}
+
+/// Starts the desktop widgets, each as its own surface with the monitor it asked for (1-based).
+pub fn desktop(
+    configs: &[ExecConfig],
+    theme: &Theme,
+    wallpaper: impl Fn() -> Box<dyn crate::wallpaper::Source>,
+) -> Result<Vec<(OnWallpaper, Option<u32>)>, String> {
+    validate(configs)?;
+    configs
+        .iter()
+        .filter_map(|c| c.desktop.clone().map(|d| (c, d)))
+        .map(|(c, d)| {
+            let widget = ExecWidget::spawn(c.clone())?;
+            let monitor = d.monitor;
+            let desk = Desk::new(widget, d.height);
+            Ok((OnWallpaper::new(desk, d, theme.clone(), wallpaper()), monitor))
         })
         .collect()
 }
@@ -483,6 +517,7 @@ mod tests {
             interval,
             on_click: None,
             glue: None,
+            desktop: None,
         }
     }
 
@@ -605,6 +640,46 @@ mod tests {
         };
         let e = unanchored.validate().err().unwrap();
         assert!(e.contains("widget \"stuck\": glue needs exe"), "{e}");
+    }
+
+    #[test]
+    fn desktop_widgets_leave_the_panel_and_cannot_also_be_glued() {
+        let desk = ExecConfig {
+            name: "desk".into(),
+            desktop: Some(DeskConfig {
+                monitor: Some(2),
+                ..Default::default()
+            }),
+            ..config(&["x"], Some(60.0))
+        };
+        assert!(!desk.on_panel());
+        assert!(config(&["x"], Some(60.0)).on_panel());
+        let none = || -> Box<dyn crate::wallpaper::Source> { Box::new(crate::wallpaper::Fixed::new(None)) };
+        let surfaces = desktop(
+            &[config(&["x"], Some(60.0)), desk.clone()],
+            &Theme::aizome(),
+            none,
+        )
+        .unwrap();
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(surfaces[0].1, Some(2));
+        let both = ExecConfig {
+            glue: Some(GlueConfig {
+                exe: Some("a".into()),
+                ..Default::default()
+            }),
+            ..desk.clone()
+        };
+        let e = both.validate().err().unwrap();
+        assert!(e.contains("widget \"desk\": glue and desktop"), "{e}");
+        let tiny = ExecConfig {
+            desktop: Some(DeskConfig {
+                height: 4.0,
+                ..Default::default()
+            }),
+            ..desk
+        };
+        assert!(tiny.validate().err().unwrap().contains("desktop height 4"));
     }
 
     #[test]

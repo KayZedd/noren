@@ -50,6 +50,7 @@
 //! interval = 600
 //! [widget.glue]            # or on another app's window instead (see `glue`)
 //! exe = "Code.exe"
+//!                          # or [widget.desktop] on the wallpaper (see `desk`)
 //!
 //! [media]                  # now playing on the panel, colored from the cover (see `media`)
 //! cover_colors = true
@@ -220,14 +221,15 @@ impl Profile {
     /// The ids of the panel's widgets, in panel order. Glued widgets are not on the panel.
     fn panel_widgets(&self) -> Vec<&str> {
         let media = self.media.as_ref().map(|_| layouts::MEDIA);
-        let programs = self.widget.iter().filter(|w| w.glue.is_none());
+        let programs = self.widget.iter().filter(|w| w.on_panel());
         media
             .into_iter()
             .chain(programs.map(|w| w.name.as_str()))
             .collect()
     }
 
-    /// Whether `noren panel` shows a panel: `[media]` or a `[[widget]]` without `glue`.
+    /// Whether `noren panel` shows a panel: `[media]` or a `[[widget]]` without `glue` or
+    /// `desktop`.
     pub fn has_panel(&self) -> bool {
         !self.panel_widgets().is_empty()
     }
@@ -238,6 +240,12 @@ impl Profile {
     ) -> Result<Vec<(crate::Floating<crate::glue::Glued>, crate::glue::GlueConfig)>, String> {
         let theme = self.palette().theme(crate::Theme::aizome());
         crate::exec::glued(&self.widget, &theme)
+    }
+
+    /// The `[[widget]]`s on the desktop, started, each with its 1-based monitor.
+    pub fn desktop(&self) -> Result<Vec<(crate::desk::OnWallpaper, Option<u32>)>, String> {
+        let theme = self.palette().theme(crate::Theme::aizome());
+        crate::exec::desktop(&self.widget, &theme, crate::wallpaper::watch)
     }
 
     /// The `[[command]]`s with their `[chords]` and `[corners]` settings, validated.
@@ -592,6 +600,17 @@ profile = "ff"
         assert!(e.contains("widget \"git\": glue"), "{e}");
         let both = format!("{base}[media]\n");
         assert!(Profile::parse(&both).unwrap().has_panel());
+    }
+
+    #[test]
+    fn desktop_widgets_leave_the_panel_and_round_trip() {
+        let base = "schema = 1\nname = \"x\"\n[palette]\naccent = \"#7e9cd8\"\n\
+                    [[widget]]\nname = \"cpu\"\nrun = [\"x\"]\n[widget.desktop]\nanchor = \"left\"\n";
+        let p = Profile::parse(base).unwrap();
+        assert!(!p.has_panel());
+        assert_eq!(Profile::parse(&toml::to_string(&p).unwrap()).unwrap(), p);
+        let e = Profile::parse(&base.replace("anchor = \"left\"", "monitor = 0")).unwrap_err();
+        assert!(e.contains("widget \"cpu\": desktop monitors count from 1"), "{e}");
     }
 
     #[test]

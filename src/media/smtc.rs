@@ -12,8 +12,9 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionManager as Manager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
-use windows::Storage::Streams::IRandomAccessStreamReference;
+use windows::Storage::Streams::{IRandomAccessStream, IRandomAccessStreamReference};
 use windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
+use windows::core::Interface;
 
 use super::{COVER_SIDE, Control, Cover, Player, Status, Track};
 
@@ -54,10 +55,19 @@ fn ticks(t: i64) -> Duration {
 
 /// Decodes a thumbnail to RGBA, scaled so its longer side is at most [`COVER_SIDE`].
 fn decode(thumb: &IRandomAccessStreamReference) -> windows::core::Result<Cover> {
-    let stream = thumb.OpenReadAsync()?.join()?;
-    let decoder = BitmapDecoder::CreateAsync(&stream)?.join()?;
+    let stream = thumb.OpenReadAsync()?.join()?.cast::<IRandomAccessStream>()?;
+    let (width, height, rgba) = decode_stream(&stream, COVER_SIDE)?;
+    Ok(Cover { width, height, rgba })
+}
+
+/// Decodes an image to straight RGBA rows, scaled down so its longer side is at most `side`.
+pub(crate) fn decode_stream(
+    stream: &IRandomAccessStream,
+    side: u32,
+) -> windows::core::Result<(u32, u32, Vec<u8>)> {
+    let decoder = BitmapDecoder::CreateAsync(stream)?.join()?;
     let (w, h) = (decoder.OrientedPixelWidth()?, decoder.OrientedPixelHeight()?);
-    let scale = (COVER_SIDE as f32 / w.max(h).max(1) as f32).min(1.0);
+    let scale = (side as f32 / w.max(h).max(1) as f32).min(1.0);
     let (sw, sh) = (
         ((w as f32 * scale).round() as u32).max(1),
         ((h as f32 * scale).round() as u32).max(1),
@@ -76,11 +86,7 @@ fn decode(thumb: &IRandomAccessStreamReference) -> windows::core::Result<Cover> 
         )?
         .join()?
         .DetachPixelData()?;
-    Ok(Cover {
-        width: sw,
-        height: sh,
-        rgba: pixels.to_vec(),
-    })
+    Ok((sw, sh, pixels.to_vec()))
 }
 
 impl Player for Smtc {
