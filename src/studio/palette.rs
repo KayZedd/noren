@@ -325,6 +325,7 @@ pub fn run(path: &str, state_dir: Option<PathBuf>) -> ExitCode {
                 height: 32,
             }),
         centered: true,
+        renderer: super::renderer::chosen(std::env::var(super::renderer::ENV).ok().as_deref()),
         ..Default::default()
     };
     let result = eframe::run_native(
@@ -348,11 +349,5 @@ pub fn run(path: &str, state_dir: Option<PathBuf>) -> ExitCode {
             }))
         }),
     );
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("noren-studio: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    super::renderer::finish(result)
 }

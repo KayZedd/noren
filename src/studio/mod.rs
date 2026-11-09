@@ -13,6 +13,8 @@ mod app;
 mod glass;
 #[cfg(feature = "studio")]
 mod palette;
+#[cfg(feature = "studio")]
+mod renderer;
 #[cfg(all(feature = "studio", windows))]
 mod tray;
 

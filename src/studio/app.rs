@@ -2113,19 +2113,14 @@ pub fn main() -> ExitCode {
             .with_min_inner_size([860.0, 580.0])
             .with_transparent(true)
             .with_icon(icon),
+        renderer: super::renderer::chosen(std::env::var(super::renderer::ENV).ok().as_deref()),
         ..Default::default()
     };
-    match eframe::run_native(
+    super::renderer::finish(eframe::run_native(
         "noren studio",
         options,
         Box::new(|cc| Ok(Box::new(Studio::new(cc, page)))),
-    ) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("noren-studio: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    ))
 }
 
 #[cfg(test)]
